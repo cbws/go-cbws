@@ -75,7 +75,7 @@ func (c *Config) Client(ctx context.Context) *http.Client {
 // jwtSource is a source that always does a signed JWT request for a token.
 // It should typically be wrapped with a reuseTokenSource.
 type jwtSource struct {
-	ctx  context2.Context
+	ctx  context.Context
 	conf *Config
 }
 
