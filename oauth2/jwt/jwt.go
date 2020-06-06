@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
-	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/jws"
 )
@@ -75,7 +75,7 @@ func (c *Config) Client(ctx context.Context) *http.Client {
 // jwtSource is a source that always does a signed JWT request for a token.
 // It should typically be wrapped with a reuseTokenSource.
 type jwtSource struct {
-	ctx  context.Context
+	ctx  context2.Context
 	conf *Config
 }
 
