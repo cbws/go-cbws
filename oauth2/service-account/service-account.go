@@ -25,6 +25,26 @@ type Credentials struct {
 	ClientID     string `json:"client_id"`
 }
 
+func (c Credentials) TokenSource(ctx context.Context, scopes []string) (oauth2.TokenSource, error) {
+	privateKeyBytes, _ := pem.Decode([]byte(c.PrivateKey))
+
+	privateKey, err := x509.ParsePKCS8PrivateKey(privateKeyBytes.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse private key: %+v", err)
+	}
+
+	OAuth2Config := oauth2_jwt.Config{
+		ClientID:      c.ClientID,
+		Subject:       c.ClientID,
+		PrivateKey:    privateKey,
+		PrivateKeyID:  c.PrivateKeyID,
+		TokenURL:      tokenURL,
+		SigningMethod: jwt.GetSigningMethod("RS256"),
+		Scopes:        scopes,
+	}
+	return OAuth2Config.TokenSource(ctx), nil
+}
+
 func NewTokenSource(ctx context.Context, credentialsFile string, scopes []string) (oauth2.TokenSource, error) {
 	data, err := ioutil.ReadFile(credentialsFile)
 	if err != nil {
@@ -38,21 +58,5 @@ func NewTokenSource(ctx context.Context, credentialsFile string, scopes []string
 		return nil, fmt.Errorf("could not parse credentials file: %+v", err)
 	}
 
-	privateKeyBytes, _ := pem.Decode([]byte(credentials.PrivateKey))
-
-	privateKey, err := x509.ParsePKCS8PrivateKey(privateKeyBytes.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("could not parse private key: %+v", err)
-	}
-
-	OAuth2Config := oauth2_jwt.Config{
-		ClientID: credentials.ClientID,
-		Subject: credentials.ClientID,
-		PrivateKey: privateKey,
-		PrivateKeyID: credentials.PrivateKeyID,
-		TokenURL: tokenURL,
-		SigningMethod: jwt.GetSigningMethod("RS256"),
-		Scopes: scopes,
-	}
-	return OAuth2Config.TokenSource(ctx), nil
+	return credentials.TokenSource(ctx, scopes)
 }
