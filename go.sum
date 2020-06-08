@@ -2,8 +2,8 @@ cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMT
 cloud.google.com/go v0.34.0 h1:eOI3/cP2VTU6uZLDYAoic+eyzzB9YyGmJ7eIjl8rOPg=
 cloud.google.com/go v0.34.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/cbws/go-cbws-grpc v0.0.0-20200606203906-e8371ab7d77a h1:pZ+VXaJyLX7914it7QzlblYidLM6PndeYRvX1Xk0V5M=
-github.com/cbws/go-cbws-grpc v0.0.0-20200606203906-e8371ab7d77a/go.mod h1:JDkHYAgpDjHQKGlvuGgewkjGXE2YbfdSZ9uAHSGU3YY=
+github.com/cbws/go-cbws-grpc v0.0.9 h1:2QofxjOO0WibfBRirlTcjUwbGLXu3zYK+MJthFyS11o=
+github.com/cbws/go-cbws-grpc v0.0.9/go.mod h1:JDkHYAgpDjHQKGlvuGgewkjGXE2YbfdSZ9uAHSGU3YY=
 github.com/cbws/go-pagination v0.0.1 h1:iiCfdhyc1WskLsWGLKJUPCkfZhOPoTd3OftO4bhhXyc=
 github.com/cbws/go-pagination v0.0.1/go.mod h1:/lVozulagDM8JT2eyYr9OatW616R8KGWTZCJnZekzZ8=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
