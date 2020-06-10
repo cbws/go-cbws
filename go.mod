@@ -3,7 +3,7 @@ module github.com/cbws/go-cbws
 go 1.14
 
 require (
-	github.com/cbws/go-cbws-grpc v0.0.9
+	github.com/cbws/go-cbws-grpc v0.0.10
 	github.com/cbws/go-pagination v0.0.1
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/google/uuid v1.1.1
