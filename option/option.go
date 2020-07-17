@@ -86,6 +86,56 @@ type ClientOption interface {
 	Apply(*DialSettings)
 }
 
+// WithTokenSource returns a ClientOption that specifies an OAuth2 token
+// source to be used as the basis for authentication.
+func WithTokenSource(s oauth2.TokenSource) ClientOption {
+	return withTokenSource{s}
+}
+
+type withTokenSource struct{ ts oauth2.TokenSource }
+
+func (w withTokenSource) Apply(o *DialSettings) {
+	o.TokenSource = w.ts
+}
+
+type withCredFile string
+
+func (w withCredFile) Apply(o *DialSettings) {
+	o.CredentialsFile = string(w)
+}
+
+// WithCredentialsFile returns a ClientOption that authenticates
+// API calls with the given service account or refresh token JSON
+// credentials file.
+func WithCredentialsFile(filename string) ClientOption {
+	return withCredFile(filename)
+}
+
+// WithCredentialsJSON returns a ClientOption that authenticates
+// API calls with the given service account or refresh token JSON
+// credentials.
+func WithCredentialsJSON(p []byte) ClientOption {
+	return withCredentialsJSON(p)
+}
+
+type withCredentialsJSON []byte
+
+func (w withCredentialsJSON) Apply(o *DialSettings) {
+	o.CredentialsJSON = make([]byte, len(w))
+	copy(o.CredentialsJSON, w)
+}
+
+type withCreds creds.Credentials
+
+func (w *withCreds) Apply(o *DialSettings) {
+	o.Credentials = (*creds.Credentials)(w)
+}
+
+// WithCredentials returns a ClientOption that authenticates API calls.
+func WithCredentials(creds *creds.Credentials) ClientOption {
+	return (*withCreds)(creds)
+}
+
 func WithEndpoint(url string) ClientOption {
 	return withEndpoint(url)
 }
