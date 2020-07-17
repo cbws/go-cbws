@@ -67,3 +67,18 @@ type createProjectWithDisplayName string
 func (c createProjectWithDisplayName) Apply(r *v1alpha1.CreateProjectRequest) {
 	r.Project.DisplayName = string(c)
 }
+
+func (c Client) GetProject(ctx context.Context, parent, name string, opts ...GetProjectOption) (*v1alpha1.Project, error) {
+	r := &v1alpha1.GetProjectRequest{
+		Name:    name,
+	}
+	for _, opt := range opts {
+		opt.Apply(r)
+	}
+
+	return c.client.GetProject(ctx, r)
+}
+
+type GetProjectOption interface {
+	Apply(request *v1alpha1.GetProjectRequest)
+}
