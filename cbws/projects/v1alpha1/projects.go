@@ -68,7 +68,7 @@ func (c createProjectWithDisplayName) Apply(r *v1alpha1.CreateProjectRequest) {
 	r.Project.DisplayName = string(c)
 }
 
-func (c Client) GetProject(ctx context.Context, parent, name string, opts ...GetProjectOption) (*v1alpha1.Project, error) {
+func (c Client) GetProject(ctx context.Context, name string, opts ...GetProjectOption) (*v1alpha1.Project, error) {
 	r := &v1alpha1.GetProjectRequest{
 		Name:    name,
 	}
