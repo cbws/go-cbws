@@ -43,9 +43,9 @@ type PaginateProjectsOption interface {
 
 func (c Client) CreateProject(ctx context.Context, parent, name string, opts ...CreateProjectOption) (*v1alpha1.Project, error) {
 	r := &v1alpha1.CreateProjectRequest{
-		Parent:        parent,
-		Name:          name,
-		Project:       &v1alpha1.Project{},
+		Parent:  parent,
+		Name:    name,
+		Project: &v1alpha1.Project{},
 	}
 	for _, opt := range opts {
 		opt.Apply(r)
