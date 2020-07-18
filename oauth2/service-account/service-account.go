@@ -27,6 +27,9 @@ type Credentials struct {
 
 func (c Credentials) TokenSource(ctx context.Context, scopes []string) (oauth2.TokenSource, error) {
 	privateKeyBytes, _ := pem.Decode([]byte(c.PrivateKey))
+	if privateKeyBytes == nil {
+		return nil, nil
+	}
 
 	privateKey, err := x509.ParsePKCS8PrivateKey(privateKeyBytes.Bytes)
 	if err != nil {
