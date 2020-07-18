@@ -4,7 +4,9 @@ import (
 	"context"
 
 	"github.com/cbws/go-cbws-grpc/cbws/projects/v1alpha1"
+
 	"github.com/cbws/go-pagination"
+	"google.golang.org/genproto/googleapis/longrunning"
 )
 
 func (c Client) PaginateProjects(opts ...PaginateProjectsOption) pagination.Paginator {
@@ -81,4 +83,19 @@ func (c Client) GetProject(ctx context.Context, name string, opts ...GetProjectO
 
 type GetProjectOption interface {
 	Apply(request *v1alpha1.GetProjectRequest)
+}
+
+func (c Client) DeleteProject(ctx context.Context, name string, opts ...DeleteProjectOption) (*longrunning.Operation, error) {
+	r := &v1alpha1.DeleteProjectRequest{
+		Name:    name,
+	}
+	for _, opt := range opts {
+		opt.Apply(r)
+	}
+
+	return c.client.DeleteProject(ctx, r)
+}
+
+type DeleteProjectOption interface {
+	Apply(request *v1alpha1.DeleteProjectRequest)
 }
