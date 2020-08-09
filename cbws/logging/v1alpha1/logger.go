@@ -71,8 +71,15 @@ func (c *Client) Logger(logID string, opts ...LoggerOption) *Logger {
 		<-c.donec
 
 		close(logger.cEntry)
+		// Shutdown buffer handling goroutine
 		logger.donec <- struct {
 		}{}
+
+		// Flush channel entries into buffer
+		for entry := range logger.cEntry {
+			logger.bufferedEntries = append(logger.bufferedEntries, entry)
+		}
+
 		logger.handleBufferedEntries(context.Background())
 	}()
 
