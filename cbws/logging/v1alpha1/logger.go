@@ -21,7 +21,7 @@ func (c *Client) Logger(logID string, opts ...LoggerOption) *Logger {
 	logger := &Logger{
 		c:       c,
 		logName: fmt.Sprintf("%s/logs/%s", c.parent, logID),
-		cEntry:  make(chan *pblogging.LogEntry, 25),
+		cEntry:  make(chan Entry, 25),
 		donec:   make(chan struct{}),
 		monitoredResource: &pbapi.MonitoredResource{
 			Type: "projects.cbws.xyz/Project",
@@ -46,9 +46,15 @@ func (c *Client) Logger(logID string, opts ...LoggerOption) *Logger {
 					return
 				}
 
+				ent, err := toLogEntry(entry)
+				if err != nil {
+					logger.c.error(err)
+					continue
+				}
+
 				logger.bufferMutex.RUnlock()
 				logger.bufferMutex.Lock()
-				logger.bufferedEntries = append(logger.bufferedEntries, entry)
+				logger.bufferedEntries = append(logger.bufferedEntries, ent)
 				logger.bufferMutex.Unlock()
 			}
 		}
@@ -77,7 +83,13 @@ func (c *Client) Logger(logID string, opts ...LoggerOption) *Logger {
 
 		// Flush channel entries into buffer
 		for entry := range logger.cEntry {
-			logger.bufferedEntries = append(logger.bufferedEntries, entry)
+			ent, err := toLogEntry(entry)
+			if err != nil {
+				logger.c.error(err)
+				continue
+			}
+
+			logger.bufferedEntries = append(logger.bufferedEntries, ent)
 		}
 
 		logger.handleBufferedEntries(context.Background())
@@ -92,19 +104,13 @@ type Logger struct {
 	monitoredResource *pbapi.MonitoredResource
 	bufferedEntries   []*pblogging.LogEntry
 	bufferMutex       sync.RWMutex
-	cEntry            chan *pblogging.LogEntry
+	cEntry            chan Entry
 	donec             chan struct{}
 }
 
 // Log buffers the Entry for output to the logging service. It never blocks.
 func (l *Logger) Log(e Entry) {
-	ent, err := toLogEntry(e)
-	if err != nil {
-		l.c.error(err)
-		return
-	}
-
-	l.cEntry <- ent
+	l.cEntry <- e
 }
 
 func (l *Logger) StandardLogger(opts ...WriterOption) *log.Logger {
