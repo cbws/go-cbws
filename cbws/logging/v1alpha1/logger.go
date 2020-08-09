@@ -124,9 +124,10 @@ func (l *Logger) handleBufferedEntries(ctx context.Context) {
 
 func (l *Logger) writeLogEntries(ctx context.Context, entries []*pblogging.LogEntry) []*pblogging.LogEntry {
 	_, err := l.c.client.WriteLogEntries(ctx, &pblogging.WriteLogEntriesRequest{
-		DefaultParent:  l.logName,
-		PartialSuccess: true,
-		LogEntries:     entries,
+		DefaultResource: l.monitoredResource,
+		DefaultParent:   l.logName,
+		PartialSuccess:  true,
+		LogEntries:      entries,
 	})
 	if err != nil {
 		if e, ok := status.FromError(err); ok {
