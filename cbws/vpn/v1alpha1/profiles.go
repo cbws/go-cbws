@@ -46,7 +46,6 @@ func (c Client) CreateProfile(ctx context.Context, parent, name string, opts ...
 		Parent:        parent,
 		Name:          name,
 		Profile:       &v1alpha1.Profile{},
-		XXX_sizecache: 0,
 	}
 	for _, opt := range opts {
 		opt.Apply(r)
@@ -72,7 +71,6 @@ func (c createProfileWithDisplayName) Apply(r *v1alpha1.CreateProfileRequest) {
 func (c Client) DeleteProfile(ctx context.Context, name string, opts ...DeleteProfileOption) error {
 	r := &v1alpha1.DeleteProfileRequest{
 		Name:          name,
-		XXX_sizecache: 0,
 	}
 	for _, opt := range opts {
 		opt.Apply(r)

@@ -47,7 +47,6 @@ func (c Client) CreateInstance(ctx context.Context, parent, name string, opts ..
 		Parent:        parent,
 		Name:          name,
 		Instance:      &v1alpha1.Instance{},
-		XXX_sizecache: 0,
 	}
 	for _, opt := range opts {
 		opt.Apply(r)
@@ -93,7 +92,6 @@ func (c createInstanceWithIPv4DefaultGateway) Apply(r *v1alpha1.CreateInstanceRe
 func (c Client) DeleteInstance(ctx context.Context, name string, opts ...DeleteInstanceOption) error {
 	r := &v1alpha1.DeleteInstanceRequest{
 		Name:          name,
-		XXX_sizecache: 0,
 	}
 	for _, opt := range opts {
 		opt.Apply(r)
