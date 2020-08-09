@@ -20,6 +20,10 @@ func (g *GRPCClient) NewStream(ctx context.Context, desc *grpc.StreamDesc, metho
 	return g.client.NewStream(ctx, desc, method, opts...)
 }
 
+func (g *GRPCClient) Close() error {
+	return g.client.Close()
+}
+
 func New(ctx context.Context, opts ...option.ClientOption) (*GRPCClient, error) {
 	o, err := processAndValidateOpts(opts)
 	if err != nil {
