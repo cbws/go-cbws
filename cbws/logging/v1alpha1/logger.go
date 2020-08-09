@@ -97,8 +97,6 @@ func (l *Logger) Log(e Entry) {
 		return
 	}
 
-	fmt.Printf("Log entry: %+v\n", e.Payload)
-
 	l.cEntry <- ent
 }
 

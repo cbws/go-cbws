@@ -59,8 +59,6 @@ type Client struct {
 // error puts the error on the client's error channel
 // without blocking, and records summary error info.
 func (c *Client) error(err error) {
-	fmt.Printf("Got error: %+v", err)
-
 	select {
 	case c.errc <- err:
 	default:
