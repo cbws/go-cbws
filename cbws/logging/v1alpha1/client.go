@@ -37,7 +37,7 @@ func NewClient(ctx context.Context, parent string, opts ...option.ClientOption) 
 	// Call the user's function synchronously, to make life easier for them.
 	go func() {
 		for err := range c.errc {
-			fmt.Fprintf(os.Stderr, "logging: %v", err)
+			fmt.Fprintf(os.Stderr, "cbws logging error: %v\n", err)
 		}
 	}()
 	return c, nil

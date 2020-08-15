@@ -14,35 +14,60 @@ import (
 
 // A LoggerOption is a configuration option for a Logger.
 type LoggerOption interface {
-	set(*Logger)
+	set(*loggerConfig)
+}
+
+type loggerConfig struct {
+	channelDepth int
+	bufferDepth int
+}
+
+type channelDepth int
+
+func (cd channelDepth) set(c *loggerConfig) {
+	c.channelDepth = int(cd)
+}
+
+func WithChannelDepth(depth int) channelDepth {
+	return channelDepth(depth)
+}
+
+type bufferDepth int
+
+func (cd bufferDepth) set(c *loggerConfig) {
+	c.bufferDepth = int(cd)
+}
+
+func WithBufferDepth(depth int) bufferDepth {
+	return bufferDepth(depth)
 }
 
 func (c *Client) Logger(logID string, opts ...LoggerOption) *Logger {
+	config := &loggerConfig{
+		channelDepth: 25,
+		// The maximum number of log entries that can be send in a single write entries request
+		bufferDepth: 1000,
+	}
+	for _, opt := range opts {
+		opt.set(config)
+	}
 	logger := &Logger{
 		c:       c,
 		logName: fmt.Sprintf("%s/logs/%s", c.parent, logID),
-		cEntry:  make(chan Entry, 25),
+		cEntry:  make(chan Entry, config.channelDepth),
 		donec:   make(chan struct{}),
 		monitoredResource: &pbapi.MonitoredResource{
 			Type: "projects.cbws.xyz/Project",
 			Name: fmt.Sprintf("//projects.cbws.xyz/%s", c.parent),
 		},
+		config: config,
 	}
 
 	go func() {
 		for {
-			logger.bufferMutex.RLock()
-			if len(logger.bufferedEntries) >= 1000 {
-				logger.bufferMutex.RUnlock()
-
-				continue
-			}
-
 			select {
 			case entry, ok := <-logger.cEntry:
 				if !ok {
-					logger.bufferMutex.RUnlock()
-
 					return
 				}
 
@@ -52,8 +77,12 @@ func (c *Client) Logger(logID string, opts ...LoggerOption) *Logger {
 					continue
 				}
 
-				logger.bufferMutex.RUnlock()
 				logger.bufferMutex.Lock()
+				if len(logger.bufferedEntries) >= config.bufferDepth {
+					c.error(fmt.Errorf("buffer full (%d entries) removing oldest", len(logger.bufferedEntries)))
+
+					logger.bufferedEntries = logger.bufferedEntries[1:]
+				}
 				logger.bufferedEntries = append(logger.bufferedEntries, ent)
 				logger.bufferMutex.Unlock()
 			}
@@ -106,6 +135,7 @@ type Logger struct {
 	bufferMutex       sync.RWMutex
 	cEntry            chan Entry
 	donec             chan struct{}
+	config            *loggerConfig
 }
 
 // Log buffers the Entry for output to the logging service. It never blocks.
