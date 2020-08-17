@@ -43,9 +43,9 @@ type PaginateProfilesOption interface {
 
 func (c Client) CreateProfile(ctx context.Context, parent, name string, opts ...CreateProfileOption) (*v1alpha1.Profile, error) {
 	r := &v1alpha1.CreateProfileRequest{
-		Parent:        parent,
-		Name:          name,
-		Profile:       &v1alpha1.Profile{},
+		Parent:  parent,
+		Name:    name,
+		Profile: &v1alpha1.Profile{},
 	}
 	for _, opt := range opts {
 		opt.Apply(r)
@@ -70,7 +70,7 @@ func (c createProfileWithDisplayName) Apply(r *v1alpha1.CreateProfileRequest) {
 
 func (c Client) DeleteProfile(ctx context.Context, name string, opts ...DeleteProfileOption) error {
 	r := &v1alpha1.DeleteProfileRequest{
-		Name:          name,
+		Name: name,
 	}
 	for _, opt := range opts {
 		opt.Apply(r)

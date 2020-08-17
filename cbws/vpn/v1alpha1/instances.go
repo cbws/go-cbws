@@ -44,9 +44,9 @@ type PaginateInstancesOption interface {
 
 func (c Client) CreateInstance(ctx context.Context, parent, name string, opts ...CreateInstanceOption) (*v1alpha1.Instance, error) {
 	r := &v1alpha1.CreateInstanceRequest{
-		Parent:        parent,
-		Name:          name,
-		Instance:      &v1alpha1.Instance{},
+		Parent:   parent,
+		Name:     name,
+		Instance: &v1alpha1.Instance{},
 	}
 	for _, opt := range opts {
 		opt.Apply(r)
@@ -91,7 +91,7 @@ func (c createInstanceWithIPv4DefaultGateway) Apply(r *v1alpha1.CreateInstanceRe
 
 func (c Client) DeleteInstance(ctx context.Context, name string, opts ...DeleteInstanceOption) error {
 	r := &v1alpha1.DeleteInstanceRequest{
-		Name:          name,
+		Name: name,
 	}
 	for _, opt := range opts {
 		opt.Apply(r)

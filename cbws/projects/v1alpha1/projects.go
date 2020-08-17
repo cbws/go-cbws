@@ -72,7 +72,7 @@ func (c createProjectWithDisplayName) Apply(r *v1alpha1.CreateProjectRequest) {
 
 func (c Client) GetProject(ctx context.Context, name string, opts ...GetProjectOption) (*v1alpha1.Project, error) {
 	r := &v1alpha1.GetProjectRequest{
-		Name:    name,
+		Name: name,
 	}
 	for _, opt := range opts {
 		opt.Apply(r)
@@ -87,7 +87,7 @@ type GetProjectOption interface {
 
 func (c Client) DeleteProject(ctx context.Context, name string, opts ...DeleteProjectOption) (*longrunning.Operation, error) {
 	r := &v1alpha1.DeleteProjectRequest{
-		Name:    name,
+		Name: name,
 	}
 	for _, opt := range opts {
 		opt.Apply(r)
