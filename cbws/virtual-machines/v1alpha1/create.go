@@ -3,8 +3,6 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
-	"log"
-
 	longrunning "github.com/cbws/go-cbws/cbws/longrunning/v1alpha1"
 
 	pbvm "github.com/cbws/go-cbws-grpc/cbws/virtual-machines/v1alpha1"
@@ -16,6 +14,7 @@ import (
 )
 
 type CreateOperationHandler struct {
+	instance *Instance
 	handler *longrunning.Handler
 }
 
@@ -37,7 +36,7 @@ type waitCreate struct {
 	cmc cmc
 }
 
-func (h *CreateOperationHandler) Wait(ctx context.Context, opts ...CreateWaitOption) (*pbvm.Instance, *status.Status, error) {
+func (h *CreateOperationHandler) Wait(ctx context.Context, opts ...CreateWaitOption) (*Instance, *status.Status, error) {
 	wc := &waitCreate{}
 	for _, opt := range opts {
 		opt.set(wc)
@@ -48,7 +47,6 @@ func (h *CreateOperationHandler) Wait(ctx context.Context, opts ...CreateWaitOpt
 		mc := make(chan *any.Any)
 		wopts = append(wopts, longrunning.WithMetadataChannel(mc))
 		go func() {
-			defer log.Printf("Metadata conversion goroutine done")
 			for {
 				select {
 				case m, ok := <-mc:
@@ -83,7 +81,7 @@ func (h *CreateOperationHandler) Wait(ctx context.Context, opts ...CreateWaitOpt
 			return nil, nil, err
 		}
 
-		return r, nil, nil
+		return (*Instance)(r), nil, nil
 	default:
 		return nil, nil, fmt.Errorf("unknown type: %T", result)
 	}
@@ -99,7 +97,10 @@ func (c Client) Create(ctx context.Context, id string, instance *Instance) (*Cre
 		return nil, err
 	}
 
+	instance.Name = fmt.Sprintf("projects/%s/instances/%s", c.project, id)
+
 	return &CreateOperationHandler{
-		c.operationsClient.Handler(operation),
+		handler: c.operationsClient.Handler(operation),
+		instance: instance,
 	}, err
 }

@@ -25,11 +25,3 @@ func (c Client) Reset(ctx context.Context, id string) (*pblongrunning.Operation,
 		Name: fmt.Sprintf("projects/%s/instances/%s", c.project, id),
 	})
 }
-
-func (c Client) Update(ctx context.Context, id string, instance *Instance) (*pblongrunning.Operation, error) {
-	instance.Name = fmt.Sprintf("projects/%s/instances/%s", c.project, id)
-
-	return c.client.UpdateInstance(ctx, &pbvm.UpdateInstanceRequest{
-		Instance: (*pbvm.Instance)(instance),
-	})
-}
