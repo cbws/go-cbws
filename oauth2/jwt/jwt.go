@@ -81,25 +81,8 @@ type jwtSource struct {
 
 func (js jwtSource) Token() (*oauth2.Token, error) {
 	hc := oauth2.NewClient(js.ctx, nil)
-	t := js.conf.Expires
-	if t == 0 {
-		t = 3600
-	}
-	claims := &JWTOAuthClaims{
-		StandardClaims: jwt.StandardClaims{
-			Audience:  js.conf.TokenURL,
-			ExpiresAt: time.Now().Add(t).Unix(),
-			Id:        uuid.New().String(),
-			Issuer:    js.conf.ClientID,
-			Subject:   js.conf.Subject,
-		},
-		Scope: strings.Join(js.conf.Scopes, " "),
-	}
 
-	jwtToken := jwt.NewWithClaims(js.conf.SigningMethod, claims)
-	jwtToken.Header["kid"] = js.conf.PrivateKeyID
-
-	payload, err := jwtToken.SignedString(js.conf.PrivateKey)
+	payload, err := js.assertion()
 	if err != nil {
 		return nil, err
 	}
@@ -154,6 +137,28 @@ func (js jwtSource) Token() (*oauth2.Token, error) {
 		token.Expiry = time.Unix(claimSet.Exp, 0)
 	}
 	return token, nil
+}
+
+func (js jwtSource) assertion() (string, error) {
+	t := js.conf.Expires
+	if t == 0 {
+		t = 3600
+	}
+	claims := &JWTOAuthClaims{
+		StandardClaims: jwt.StandardClaims{
+			Audience:  js.conf.TokenURL,
+			ExpiresAt: time.Now().Add(t).Unix(),
+			Id:        uuid.New().String(),
+			Issuer:    js.conf.ClientID,
+			Subject:   js.conf.Subject,
+		},
+		Scope: strings.Join(js.conf.Scopes, " "),
+	}
+
+	jwtToken := jwt.NewWithClaims(js.conf.SigningMethod, claims)
+	jwtToken.Header["kid"] = js.conf.PrivateKeyID
+
+	return jwtToken.SignedString(js.conf.PrivateKey)
 }
 
 type JWTOAuthClaims struct {
