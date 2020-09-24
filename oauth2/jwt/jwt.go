@@ -147,7 +147,7 @@ func (js jwtSource) assertion() (string, error) {
 	claims := &JWTOAuthClaims{
 		StandardClaims: jwt.StandardClaims{
 			Audience:  js.conf.TokenURL,
-			ExpiresAt: time.Now().Add(t).Unix(),
+			ExpiresAt: time.Now().Add(t * time.Second).Unix(),
 			Id:        uuid.New().String(),
 			Issuer:    js.conf.ClientID,
 			Subject:   js.conf.Subject,
