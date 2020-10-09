@@ -39,6 +39,7 @@ github.com/cbws/go-cbws-grpc v0.2.0 h1:wLiSDjcgm68gN+CeFNLbZL5uTSiHrDnaVLLaMCxqY
 github.com/cbws/go-cbws-grpc v0.2.0/go.mod h1:2pdWOoMKsujdm66WveYuRIBmi87ItQMAKSZWSjpuhgk=
 github.com/cbws/go-cbws-grpc v0.4.3 h1:6Q79kWSSgHv1QhkqH1Wn1iBGa9puiL49ZTMXY8Smj78=
 github.com/cbws/go-cbws-grpc v0.4.3/go.mod h1:X6mPjCxyaydflkOXtdtqEQaBq2vR7rSZS+lMKkY8EzQ=
+github.com/cbws/go-cbws-grpc v0.5.2/go.mod h1:X6mPjCxyaydflkOXtdtqEQaBq2vR7rSZS+lMKkY8EzQ=
 github.com/cbws/go-pagination v0.0.1 h1:iiCfdhyc1WskLsWGLKJUPCkfZhOPoTd3OftO4bhhXyc=
 github.com/cbws/go-pagination v0.0.1/go.mod h1:/lVozulagDM8JT2eyYr9OatW616R8KGWTZCJnZekzZ8=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
