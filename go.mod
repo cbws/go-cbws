@@ -4,7 +4,7 @@ go 1.14
 
 require (
 	cloud.google.com/go v0.63.0 // indirect
-	github.com/cbws/go-cbws-grpc v0.6.0
+	github.com/cbws/go-cbws-grpc v0.7.0
 	github.com/cbws/go-pagination v0.0.1
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/golang/protobuf v1.4.2
