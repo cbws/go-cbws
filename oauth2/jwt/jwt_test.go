@@ -31,7 +31,7 @@ func TestAssertionExpiry(t *testing.T) {
 			PrivateKey:    privateKey,
 			PrivateKeyID:  "c9d11f86-61d8-4cd7-ab9e-5b2f5a80550e",
 			Subject:       "893e3210-b34c-49dd-adad-b33cba76eb07",
-			TokenURL:      "https://accounts.cloudbear.nl/oauth2/token",
+			TokenURL:      "https://accounts.cbws.nl/oauth2/token",
 			SigningMethod: jwt.GetSigningMethod("RS256"),
 		},
 	}

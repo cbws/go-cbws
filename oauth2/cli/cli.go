@@ -37,8 +37,8 @@ func NewTokenSourceFromConfig(ctx context.Context, config string, scopes []strin
 		ClientID: ClientID,
 		Scopes:   scopes,
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  "https://accounts.cloudbear.nl/oauth2/auth",
-			TokenURL: "https://accounts.cloudbear.nl/oauth2/token",
+			AuthURL:  "https://accounts.cbws.nl/oauth2/auth",
+			TokenURL: "https://accounts.cbws.nl/oauth2/token",
 		},
 	}
 
