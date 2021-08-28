@@ -11,7 +11,7 @@ import (
 	pbvm "github.com/cbws/go-cbws-grpc/cbws/virtual-machines/v1alpha1"
 )
 
-const endpoint = "vm.cbws.xyz:443"
+const endpoint = "vm.cbws.cloud:443"
 
 func NewClient(ctx context.Context, project string, opts ...option.ClientOption) (*Client, error) {
 	o := []option.ClientOption{

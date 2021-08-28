@@ -9,9 +9,9 @@ import (
 	"github.com/cbws/go-cbws-grpc/cbws/vpn/v1alpha1"
 )
 
-const endpoint = "vpn.cbws.xyz:443"
+const endpoint = "vpn.cbws.cloud:443"
 
-//const scope = "https://vpn.cbws.xyz/"
+//const scope = "https://vpn.cbws.cloud/"
 
 func NewClient(ctx context.Context, opts ...option.ClientOption) (*Client, error) {
 	o := []option.ClientOption{

@@ -13,7 +13,7 @@ import (
 	pblogging "github.com/cbws/go-cbws-grpc/cbws/logging/v1alpha1"
 )
 
-const endpoint = "logging.cbws.xyz:443"
+const endpoint = "logging.cbws.cloud:443"
 
 func NewClient(ctx context.Context, parent string, opts ...option.ClientOption) (*Client, error) {
 	o := []option.ClientOption{

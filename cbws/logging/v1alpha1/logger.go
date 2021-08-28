@@ -57,8 +57,8 @@ func (c *Client) Logger(logID string, opts ...LoggerOption) *Logger {
 		cEntry:  make(chan Entry, config.channelDepth),
 		donec:   make(chan struct{}),
 		monitoredResource: &pbapi.MonitoredResource{
-			Type: "projects.cbws.xyz/Project",
-			Name: fmt.Sprintf("//projects.cbws.xyz/%s", c.parent),
+			Type: "projects.cbws.cloud/Project",
+			Name: fmt.Sprintf("//projects.cbws.cloud/%s", c.parent),
 		},
 		config: config,
 	}

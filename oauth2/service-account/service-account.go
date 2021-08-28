@@ -14,7 +14,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const tokenURL = "https://accounts.cbws.nl/oauth2/token"
+const tokenURL = "https://accounts.cbws.cloud/oauth2/token"
 
 type Credentials struct {
 	Type         string `json:"type"`
