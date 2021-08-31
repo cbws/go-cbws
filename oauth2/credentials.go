@@ -39,17 +39,27 @@ func NewFromJSON(ctx context.Context, data []byte, scopes []string) (*Credential
 }
 
 func FindDefaultCredentials(ctx context.Context, scopes ...string) (*Credentials, error) {
-	// First, try the environment variable.
-	const envVar = "CLOUDBEAR_CREDENTIALS"
-	if filename := os.Getenv(envVar); filename != "" {
+	// First, try the legacy environment variable.
+	const legacyEnvVar = "CLOUDBEAR_CREDENTIALS"
+	if filename := os.Getenv(legacyEnvVar); filename != "" {
 		creds, err := readCredentialsFile(ctx, filename, scopes)
 		if err != nil {
-			return nil, fmt.Errorf("cloudbear: error getting credentials using %v environment variable: %v", envVar, err)
+			return nil, fmt.Errorf("cbws: error getting credentials using %v environment variable: %v", legacyEnvVar, err)
 		}
 		return creds, nil
 	}
 
-	// Second, try a well-known file.
+	// Second, try the environment variable.
+	const envVar = "CBWS_CREDENTIALS"
+	if filename := os.Getenv(envVar); filename != "" {
+		creds, err := readCredentialsFile(ctx, filename, scopes)
+		if err != nil {
+			return nil, fmt.Errorf("cbws: error getting credentials using %v environment variable: %v", envVar, err)
+		}
+		return creds, nil
+	}
+
+	// Third, try a well-known file.
 	filename := wellKnownFile()
 	if creds, err := readCredentialsFile(ctx, filename, scopes); err == nil {
 		return creds, nil
@@ -57,7 +67,7 @@ func FindDefaultCredentials(ctx context.Context, scopes ...string) (*Credentials
 		return nil, fmt.Errorf("cloudbear: error getting credentials using well-known file (%v): %v", filename, err)
 	}
 
-	// Third, try the CBWS CLI config
+	// Fourth, try the CBWS CLI config
 	filename = cliConfigFile()
 	if tokenSource, err := cli.NewTokenSourceFromConfig(ctx, filename, scopes); err == nil && tokenSource != nil {
 		return &Credentials{TokenSource: tokenSource}, nil
