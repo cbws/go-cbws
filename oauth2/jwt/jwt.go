@@ -51,6 +51,9 @@ type Config struct {
 	// TokenURL is the endpoint required to complete the 2-legged JWT flow.
 	TokenURL string
 
+	// Audience is the endpoint authority to complete the 2-legged JWT flow.
+	Audience string
+
 	// Expires optionally specifies how long the token is valid for.
 	Expires time.Duration
 
@@ -144,9 +147,13 @@ func (js jwtSource) assertion() (string, error) {
 	if t == 0 {
 		t = 3600
 	}
+	a := js.conf.Audience
+	if a == "" {
+		a = js.conf.TokenURL
+	}
 	claims := &JWTOAuthClaims{
 		StandardClaims: jwt.StandardClaims{
-			Audience:  js.conf.TokenURL,
+			Audience:  a,
 			ExpiresAt: time.Now().Add(t * time.Second).Unix(),
 			Id:        uuid.New().String(),
 			Issuer:    js.conf.ClientID,

@@ -14,7 +14,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const tokenURL = "https://accounts.cbws.cloud/oauth2/token"
+var tokenURL = "https://accounts.cbws.cloud/oauth2/token"
+const audience = "https://accounts.cbws.cloud/oauth2/token"
 
 type Credentials struct {
 	Type         string `json:"type"`
@@ -42,6 +43,7 @@ func (c Credentials) TokenSource(ctx context.Context, scopes []string) (oauth2.T
 		PrivateKey:    privateKey,
 		PrivateKeyID:  c.PrivateKeyID,
 		TokenURL:      tokenURL,
+		Audience:      audience,
 		SigningMethod: jwt.GetSigningMethod("RS256"),
 		Scopes:        scopes,
 	}
@@ -62,4 +64,8 @@ func NewTokenSource(ctx context.Context, credentialsFile string, scopes []string
 	}
 
 	return credentials.TokenSource(ctx, scopes)
+}
+
+func SetTokenURL(newTokenURL string) {
+	tokenURL = newTokenURL
 }
