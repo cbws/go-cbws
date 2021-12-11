@@ -27,7 +27,7 @@ func (c Client) PaginateProfiles(parent string, opts ...PaginateProfilesOption) 
 		}
 		for _, instance := range response.Profiles {
 			connection.Edges = append(connection.Edges, pagination.Edge{
-				Node: *instance,
+				Node: instance,
 			})
 		}
 		connection.PageInfo.EndCursor = pagination.StringCursor(response.NextPageToken)

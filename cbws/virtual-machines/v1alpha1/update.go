@@ -36,7 +36,7 @@ type waitUpdate struct {
 	umc umc
 }
 
-func (h *UpdateOperationHandler) Wait(ctx context.Context, opts ...UpdateWaitOption) (*Instance, *status.Status, error) {
+func (h *UpdateOperationHandler) Wait(ctx context.Context, opts ...UpdateWaitOption) (Instance, *status.Status, error) {
 	wc := &waitUpdate{}
 	for _, opt := range opts {
 		opt.set(wc)
@@ -81,17 +81,17 @@ func (h *UpdateOperationHandler) Wait(ctx context.Context, opts ...UpdateWaitOpt
 			return nil, nil, err
 		}
 
-		return (*Instance)(r), nil, nil
+		return r, nil, nil
 	default:
 		return nil, nil, fmt.Errorf("unknown type: %T", result)
 	}
 }
 
-func (c Client) Update(ctx context.Context, id string, instance *Instance, fields []string) (*UpdateOperationHandler, error) {
+func (c Client) Update(ctx context.Context, id string, instance Instance, fields []string) (*UpdateOperationHandler, error) {
 	instance.Name = fmt.Sprintf("projects/%s/instances/%s", c.project, id)
 
 	operation, err := c.client.UpdateInstance(ctx, &pbvm.UpdateInstanceRequest{
-		Instance:   (*pbvm.Instance)(instance),
+		Instance:   instance,
 		UpdateMask: &field_mask.FieldMask{Paths: fields},
 	})
 	if err != nil {

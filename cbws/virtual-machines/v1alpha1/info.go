@@ -9,7 +9,7 @@ import (
 	"google.golang.org/genproto/protobuf/field_mask"
 )
 
-type Instance pbvm.Instance
+type Instance *pbvm.Instance
 
 type getFieldMask field_mask.FieldMask
 
@@ -27,7 +27,7 @@ type GetOption interface {
 	set(r *pbvm.GetInstanceRequest)
 }
 
-func (c Client) Get(ctx context.Context, id string, opts ...GetOption) (*Instance, error) {
+func (c Client) Get(ctx context.Context, id string, opts ...GetOption) (Instance, error) {
 	r := &pbvm.GetInstanceRequest{
 		Name: fmt.Sprintf("projects/%s/instances/%s", c.project, id),
 	}
@@ -40,7 +40,7 @@ func (c Client) Get(ctx context.Context, id string, opts ...GetOption) (*Instanc
 		return nil, err
 	}
 
-	return (*Instance)(instance), err
+	return instance, err
 }
 
 type listFieldMask field_mask.FieldMask
@@ -84,7 +84,7 @@ func (c Client) Paginate(opts ...ListOption) pagination.Paginator {
 		}
 		for _, instance := range response.Instances {
 			connection.Edges = append(connection.Edges, pagination.Edge{
-				Node: Instance(*instance),
+				Node: Instance(instance),
 			})
 		}
 		connection.PageInfo.EndCursor = pagination.StringCursor(response.NextPageToken)

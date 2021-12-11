@@ -30,7 +30,7 @@ func (c Client) PaginateProjects(opts ...PaginateProjectsOption) pagination.Pagi
 		}
 		for _, instance := range response.Projects {
 			connection.Edges = append(connection.Edges, pagination.Edge{
-				Node: *instance,
+				Node: instance,
 			})
 		}
 		connection.PageInfo.EndCursor = pagination.StringCursor(response.NextPageToken)

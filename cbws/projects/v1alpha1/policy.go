@@ -13,9 +13,9 @@ func (c Client) GetIAMPolicy(ctx context.Context, name string) (*v1alpha1.Policy
 	})
 }
 
-func (c Client) SetIAMPolicy(ctx context.Context, name string, policy v1alpha1.Policy) (*v1alpha1.Policy, error) {
+func (c Client) SetIAMPolicy(ctx context.Context, name string, policy *v1alpha1.Policy) (*v1alpha1.Policy, error) {
 	return c.UnderlyingClient().SetPolicy(ctx, &v1alpha1.SetPolicyRequest{
 		Resource: fmt.Sprintf("projects/%s", name),
-		Policy:   &policy,
+		Policy:   policy,
 	})
 }

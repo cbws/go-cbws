@@ -14,8 +14,8 @@ import (
 )
 
 type CreateOperationHandler struct {
-	instance *Instance
-	handler *longrunning.Handler
+	instance Instance
+	handler  *longrunning.Handler
 }
 
 type cmc chan *pbvm.CreateInstanceMetadata
@@ -36,7 +36,7 @@ type waitCreate struct {
 	cmc cmc
 }
 
-func (h *CreateOperationHandler) Wait(ctx context.Context, opts ...CreateWaitOption) (*Instance, *status.Status, error) {
+func (h *CreateOperationHandler) Wait(ctx context.Context, opts ...CreateWaitOption) (Instance, *status.Status, error) {
 	wc := &waitCreate{}
 	for _, opt := range opts {
 		opt.set(wc)
@@ -81,17 +81,17 @@ func (h *CreateOperationHandler) Wait(ctx context.Context, opts ...CreateWaitOpt
 			return nil, nil, err
 		}
 
-		return (*Instance)(r), nil, nil
+		return r, nil, nil
 	default:
 		return nil, nil, fmt.Errorf("unknown type: %T", result)
 	}
 }
 
-func (c Client) Create(ctx context.Context, id string, instance *Instance) (*CreateOperationHandler, error) {
+func (c Client) Create(ctx context.Context, id string, instance Instance) (*CreateOperationHandler, error) {
 	operation, err := c.client.CreateInstance(ctx, &pbvm.CreateInstanceRequest{
 		Parent:     fmt.Sprintf("projects/%s", c.project),
 		InstanceId: id,
-		Instance:   (*pbvm.Instance)(instance),
+		Instance:   instance,
 	})
 	if err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func (c Client) Create(ctx context.Context, id string, instance *Instance) (*Cre
 	instance.Name = fmt.Sprintf("projects/%s/instances/%s", c.project, id)
 
 	return &CreateOperationHandler{
-		handler: c.operationsClient.Handler(operation),
+		handler:  c.operationsClient.Handler(operation),
 		instance: instance,
 	}, err
 }
