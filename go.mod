@@ -11,7 +11,7 @@ require (
 	github.com/google/uuid v1.1.2
 	github.com/stretchr/testify v1.4.0
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
-	golang.org/x/sys v0.0.0-20200808120158-1030fc2bf1d9 // indirect
+	golang.org/x/sys v0.1.0 // indirect
 	google.golang.org/genproto v0.0.0-20200808173500-a06252235341
 	google.golang.org/grpc v1.33.2
 	google.golang.org/protobuf v1.25.0
