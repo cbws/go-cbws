@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	creds "github.com/cbws/go-cbws/oauth2"
+	creds "go.cbws.cloud/sdk/oauth2"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"

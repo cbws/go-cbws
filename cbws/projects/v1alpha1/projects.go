@@ -7,7 +7,7 @@ import (
 	"github.com/cbws/go-pagination"
 	"google.golang.org/genproto/googleapis/longrunning"
 
-	"github.com/cbws/go-cbws-grpc/cbws/projects/v1alpha1"
+	"go.cbws.cloud/api/projects/v1alpha1"
 )
 
 func (c Client) PaginateProjects(opts ...PaginateProjectsOption) pagination.Paginator {

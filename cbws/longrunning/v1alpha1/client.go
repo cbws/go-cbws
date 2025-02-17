@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/cbws/go-cbws/client/grpc"
-	"github.com/cbws/go-cbws/option"
+	"go.cbws.cloud/sdk/client/grpc"
+	"go.cbws.cloud/sdk/option"
 
 	pblongrunning "google.golang.org/genproto/googleapis/longrunning"
 )

@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	oauth2_jwt "github.com/cbws/go-cbws/oauth2/jwt"
+	oauth2_jwt "go.cbws.cloud/sdk/oauth2/jwt"
 
 	"github.com/dgrijalva/jwt-go"
 	"golang.org/x/oauth2"
 )
 
 var tokenURL = "https://accounts.cbws.cloud/oauth2/token"
+
 const audience = "https://accounts.cbws.cloud/oauth2/token"
 
 type Credentials struct {

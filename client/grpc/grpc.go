@@ -2,7 +2,8 @@ package grpc
 
 import (
 	"context"
-	"github.com/cbws/go-cbws/option"
+
+	"go.cbws.cloud/sdk/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/oauth"

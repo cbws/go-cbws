@@ -3,10 +3,10 @@ package v1alpha1
 import (
 	"context"
 
-	"github.com/cbws/go-cbws/client/grpc"
-	"github.com/cbws/go-cbws/option"
+	"go.cbws.cloud/sdk/client/grpc"
+	"go.cbws.cloud/sdk/option"
 
-	"github.com/cbws/go-cbws-grpc/cbws/projects/v1alpha1"
+	"go.cbws.cloud/api/projects/v1alpha1"
 )
 
 const endpoint = "projects.cbws.cloud:443"

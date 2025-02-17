@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cbws/go-cbws-grpc/cbws/iam/policy/v1alpha1"
+	"go.cbws.cloud/api/iam/policy/v1alpha1"
 )
 
 func (c Client) GetIAMPolicy(ctx context.Context, name string) (*v1alpha1.Policy, error) {

@@ -9,8 +9,10 @@ import (
 	"os/user"
 	"path/filepath"
 
-	"github.com/cbws/go-cbws/oauth2/cli"
-	"github.com/cbws/go-cbws/oauth2/service-account"
+	metadata "go.cbws.cloud/sdk/cbws/metadata/v1alpha1"
+	"go.cbws.cloud/sdk/oauth2/cli"
+	metadata2 "go.cbws.cloud/sdk/oauth2/metadata"
+	"go.cbws.cloud/sdk/oauth2/service-account"
 
 	"golang.org/x/oauth2"
 )
@@ -64,7 +66,7 @@ func FindDefaultCredentials(ctx context.Context, scopes ...string) (*Credentials
 	if creds, err := readCredentialsFile(ctx, filename, scopes); err == nil {
 		return creds, nil
 	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("cloudbear: error getting credentials using well-known file (%v): %v", filename, err)
+		return nil, fmt.Errorf("cbws: error getting credentials using well-known file (%v): %v", filename, err)
 	}
 
 	// Fourth, try the CBWS CLI config
@@ -72,7 +74,12 @@ func FindDefaultCredentials(ctx context.Context, scopes ...string) (*Credentials
 	if tokenSource, err := cli.NewTokenSourceFromConfig(ctx, filename, scopes); err == nil && tokenSource != nil {
 		return &Credentials{TokenSource: tokenSource}, nil
 	} else if err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("cloudbear: error reading CBWS CLI config file (%v): %v", filename, err)
+		return nil, fmt.Errorf("cbws: error reading CBWS CLI config file (%v): %v", filename, err)
+	}
+
+	// Fifth, try the CBWS metadata token endpoint
+	if metadata.OnCBWS() {
+		return &Credentials{TokenSource: metadata2.TokenSource(ctx)}, nil
 	}
 
 	return nil, fmt.Errorf("no credentials found")
