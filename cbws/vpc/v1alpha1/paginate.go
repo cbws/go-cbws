@@ -2,6 +2,8 @@ package v1alpha1
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"go.cbws.cloud/api/vpc/v1alpha1"
 
@@ -59,7 +61,7 @@ func (c Client) PaginatePrivateNetworks(opts ...PaginatePrivateNetworksOption) p
 		if after != nil {
 			r.PageToken = after.GetCursor()
 		}
-		//r.Parent = "projects/" + c.project
+		r.Parent = "projects/" + c.project + "/vpcs/default"
 		for _, opt := range opts {
 			opt.Apply(r)
 		}
@@ -82,6 +84,18 @@ func (c Client) PaginatePrivateNetworks(opts ...PaginatePrivateNetworksOption) p
 
 type PaginatePrivateNetworksOption interface {
 	Apply(request *v1alpha1.ListPrivateNetworksRequest)
+}
+
+func WithPrivateNetworkVpc(vpc string) paginatePrivateNetworksWithVpc {
+	return paginatePrivateNetworksWithVpc(vpc)
+}
+
+type paginatePrivateNetworksWithVpc string
+
+func (c paginatePrivateNetworksWithVpc) Apply(r *v1alpha1.ListPrivateNetworksRequest) {
+	projectName := strings.Split(r.Parent, "/")[1]
+
+	r.Parent = fmt.Sprintf("projects/%s/vpcs/%s", projectName, c)
 }
 
 //
