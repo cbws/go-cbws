@@ -11,7 +11,7 @@ import (
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 )
 
-const endpoint = "vpc.cbws.cloud:443"
+const endpoint = "dns:///vpc.cbws.cloud:443"
 
 func NewClient(ctx context.Context, project string, opts ...option.ClientOption) (*Client, error) {
 	o := []option.ClientOption{

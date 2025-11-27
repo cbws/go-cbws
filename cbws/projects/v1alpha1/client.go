@@ -9,7 +9,7 @@ import (
 	"go.cbws.cloud/api/projects/v1alpha1"
 )
 
-const endpoint = "projects.cbws.cloud:443"
+const endpoint = "dns:///projects.cbws.cloud:443"
 
 func NewClient(ctx context.Context, opts ...option.ClientOption) (*Client, error) {
 	o := []option.ClientOption{
