@@ -194,3 +194,15 @@ type withGRPCDialOption struct{ opt grpc.DialOption }
 func (w withGRPCDialOption) Apply(o *DialSettings) {
 	o.GRPCDialOpts = append(o.GRPCDialOpts, w.opt)
 }
+
+// WithoutAuthentication returns a ClientOption that specifies that no
+// authentication should be used. It is suitable only for testing and for
+// accessing public resources.
+// It is an error to provide both WithoutAuthentication and any of WithTokenSource or WithCredentialsFile.
+func WithoutAuthentication() ClientOption {
+	return withoutAuthentication{}
+}
+
+type withoutAuthentication struct{}
+
+func (w withoutAuthentication) Apply(o *DialSettings) { o.NoAuth = true }
