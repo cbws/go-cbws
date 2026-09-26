@@ -4,23 +4,19 @@ The CBWS Go SDK provides a robust and flexible authentication mechanism that aut
 
 The SDK checks for credentials in the following order:
 
-1.  **Environment Variables (`CBWS_CREDENTIALS`)**
-    The SDK first looks for credentials provided directly through the `CBWS_CREDENTIALS` environment variable. This variable should contain a JSON string representing your CBWS service account credentials. This method is often used in containerized environments or CI/CD pipelines where injecting credentials via environment variables is convenient and secure.
+1.  **Environment Variable (`CBWS_CREDENTIALS`)**
+    The SDK first looks for the **path to a credentials file** in the `CBWS_CREDENTIALS` environment variable. The variable holds a filename, not the credentials themselves: the value is passed straight to `ReadFile`, so a variable containing inline JSON fails with `open {"type": "service_account"...}: no such file or directory`. This method is often used in containerized environments and CI/CD pipelines, where the credentials are mounted or written to a file and only the path is injected.
 
     Example:
     ```bash
-    export CBWS_CREDENTIALS='{
-      "type": "service_account",
-      "project_name": "YOUR_PROJECT_NAME",
-      "private_key_id": "YOUR_PRIVATE_KEY_ID",
-      "private_key": "-----BEGIN PRIVATE KEY-----
-YOUR_PRIVATE_KEY_CONTENT
------END PRIVATE KEY-----
-",
-      "client_email": "YOUR_SERVICE_ACCOUNT_EMAIL",
-      "client_id": "YOUR_CLIENT_ID"
-    }'
+    export CBWS_CREDENTIALS=/etc/cbws/credentials.json
     ```
+
+    The file it points at holds the service account key as JSON, in the same format as the well-known file described below.
+
+    **In CI/CD**, use whatever your runner offers for file-backed secrets rather than pasting the key into a plain variable. In GitLab CI, set the variable's type to **File**: GitLab then writes the value to a temporary file and sets `CBWS_CREDENTIALS` to that path. A variable of type *Variable* holding the JSON will not work.
+
+    **Legacy:** `CLOUDBEAR_CREDENTIALS` is checked *before* `CBWS_CREDENTIALS` and behaves identically. It is deprecated, but note that when it is set it shadows `CBWS_CREDENTIALS` entirely.
 
 2.  **Well-Known Credentials File (`~/.config/cbws/credentials.json`)**
     If the `CBWS_CREDENTIALS` environment variable is not set, the SDK then checks for a credentials file at the standard location: `~/.config/cbws/credentials.json`. This file should contain a JSON object with your CBWS service account credentials. This is a common method for local development environments.
@@ -41,7 +37,7 @@ YOUR_PRIVATE_KEY_CONTENT
     ```
 
 3.  **`cbws-cli` Configuration File (`~/cbws.yaml`)**
-    Next, the SDK attempts to load credentials from the `cbws-cli` configuration file, typically located at `~/cbws.yaml`. This allows the SDK to leverage credentials already configured for the CBWS Command-Line Interface. Refer to the `cbws-cli` documentation for details on how to configure credentials via the CLI.
+    Next, the SDK attempts to load credentials from the `cbws-cli` configuration file, at `~/cbws.yaml` unless `CBWS_CONFIG_FILE` points somewhere else. This allows the SDK to leverage credentials already configured for the CBWS Command-Line Interface. Refer to the `cbws-cli` documentation for details on how to configure credentials via the CLI.
 
 4.  **CBWS Metadata Service**
     Finally, if no credentials are found through the above methods, the SDK will attempt to authenticate using the CBWS metadata service. This method is automatically used when your application is running on CBWS infrastructure (e.g., on a CBWS Virtual Machine or a service deployed within the CBWS platform). It allows for secure and automatic authentication without the need to explicitly manage credentials in your application code or environment.
