@@ -320,3 +320,85 @@ func TestFileStoreLockSurvivesSave(t *testing.T) {
 	case <-time.After(250 * time.Millisecond):
 	}
 }
+
+// TestFileStoreWithoutAccessToken covers the split of ownership: a caller
+// that keeps the access token somewhere else leaves only the refresh token
+// here, and a caller with nowhere else keeps storing both.
+func TestFileStoreWithoutAccessToken(t *testing.T) {
+	token := &oauth2.Token{
+		AccessToken:  "at-1",
+		TokenType:    "bearer",
+		RefreshToken: "rt-1",
+		Expiry:       time.Date(2199, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+
+	t.Run("keeps the access token by default", func(t *testing.T) {
+		path := writeConfig(t, expiredConfig)
+
+		if err := NewFileStore(path).Save(token); err != nil {
+			t.Fatalf("Save: %+v", err)
+		}
+
+		if got := storedValue(t, path, "accesstoken"); got != "at-1" {
+			t.Errorf("stored access token = %q, want at-1", got)
+		}
+	})
+
+	t.Run("drops it when asked", func(t *testing.T) {
+		path := writeConfig(t, expiredConfig)
+		store := NewFileStoreWithOptions(path, WithoutAccessToken())
+
+		if err := store.Save(token); err != nil {
+			t.Fatalf("Save: %+v", err)
+		}
+
+		if got := storedValue(t, path, "accesstoken"); got != "" {
+			t.Errorf("stored access token = %q, want it absent", got)
+		}
+
+		// The refresh token still has to be there, or the next process has
+		// no way to obtain a token at all.
+		if got := storedValue(t, path, "refreshtoken"); got != "rt-1" {
+			t.Errorf("stored refresh token = %q, want rt-1", got)
+		}
+
+		// The expiry stays a timestamp: it is read back with a timestamp
+		// parser, and the CLI reads this file too.
+		expiry := storedValue(t, path, "expiry")
+		if _, err := time.Parse(time.RFC3339Nano, expiry); err != nil {
+			t.Errorf("stored expiry %q does not parse: %+v", expiry, err)
+		}
+
+		// Read back, the entry is a credential that cannot be presented but
+		// can still be refreshed, which is exactly the intent.
+		stored, err := store.Load()
+		if err != nil {
+			t.Fatalf("Load: %+v", err)
+		}
+		if stored.Valid() {
+			t.Error("the stored token reports itself valid, want it unusable without the cache")
+		}
+		if stored.RefreshToken != "rt-1" {
+			t.Errorf("loaded refresh token = %q, want rt-1", stored.RefreshToken)
+		}
+	})
+
+	// Turning the option on has to clean out what an earlier version of the
+	// file already held, or the credential sits there unread until it
+	// expires.
+	t.Run("clears an access token already on disk", func(t *testing.T) {
+		path := writeConfig(t, expiredConfig)
+
+		if got := storedValue(t, path, "accesstoken"); got != "at-stale" {
+			t.Fatalf("fixture access token = %q, want at-stale", got)
+		}
+
+		if err := NewFileStoreWithOptions(path, WithoutAccessToken()).Save(token); err != nil {
+			t.Fatalf("Save: %+v", err)
+		}
+
+		if got := storedValue(t, path, "accesstoken"); got != "" {
+			t.Errorf("stored access token = %q, want the earlier one cleared", got)
+		}
+	})
+}

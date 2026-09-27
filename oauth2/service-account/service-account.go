@@ -74,3 +74,10 @@ func NewTokenSource(ctx context.Context, credentialsFile string, scopes []string
 func SetTokenURL(newTokenURL string) {
 	tokenURL = newTokenURL
 }
+
+// TokenURL reports the endpoint tokens are obtained from. It is the issuer
+// half of a token cache key, which needs to name the authority a token was
+// minted by so that two environments cannot share an entry.
+func TokenURL() string {
+	return tokenURL
+}

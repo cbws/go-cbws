@@ -74,13 +74,45 @@ const tokenKey = "oauth_token"
 // FileStore keeps the token in a YAML configuration file, the shape the
 // CBWS CLI writes to ~/.cbws.yaml.
 type FileStore struct {
-	path string
+	path               string
+	withoutAccessToken bool
+}
+
+// FileStoreOption configures a FileStore.
+type FileStoreOption func(*FileStore)
+
+// WithoutAccessToken keeps the access token out of the configuration file,
+// leaving only the refresh token this store exists to look after.
+//
+// It is for a caller that has somewhere better to put it, a token cache
+// being the case this was added for. Two places holding the same access
+// token is one place too many: they disagree the moment either is written
+// alone, and the file would go on holding a usable bearer token that
+// nothing reads.
+//
+// Without it the access token is stored, which is what gives a caller with
+// no cache the same reuse across processes it has always had.
+func WithoutAccessToken() FileStoreOption {
+	return func(s *FileStore) {
+		s.withoutAccessToken = true
+	}
 }
 
 // NewFileStore returns a Store over the YAML configuration file at path.
 // The file does not have to exist yet.
 func NewFileStore(path string) *FileStore {
 	return &FileStore{path: path}
+}
+
+// NewFileStoreWithOptions is NewFileStore with the options a caller may
+// want applied, such as WithoutAccessToken.
+func NewFileStoreWithOptions(path string, options ...FileStoreOption) *FileStore {
+	store := NewFileStore(path)
+	for _, option := range options {
+		option(store)
+	}
+
+	return store
 }
 
 // storedToken is the on-disk shape. The keys are lower-cased field names
@@ -164,7 +196,7 @@ func (s *FileStore) Save(token *oauth2.Token) error {
 		return fmt.Errorf("could not parse %s: %w", path, err)
 	}
 
-	out, err := yaml.Marshal(setKey(document, tokenKey, stored(token)))
+	out, err := yaml.Marshal(setKey(document, tokenKey, s.stored(token)))
 	if err != nil {
 		return fmt.Errorf("could not encode %s: %w", path, err)
 	}
@@ -207,13 +239,27 @@ func (s *FileStore) resolvedPath() (string, error) {
 // field is read back with a timestamp parser, so leaving it empty for a
 // token that carries no expiry would make the entry unreadable rather than
 // make it say "no expiry".
-func stored(token *oauth2.Token) storedToken {
-	return storedToken{
-		AccessToken:  token.AccessToken,
+//
+// Under WithoutAccessToken the access token and its expiry are dropped
+// together. Dropping the expiry alone would leave a timestamp describing a
+// token that is not there; keeping the access token without its expiry
+// would be worse still, since a zero expiry reads as one that never lapses.
+// Writing them empty also clears whatever an earlier version of the file
+// held, so turning the option on cleans the credential out on the first
+// refresh rather than leaving it to sit there unread.
+func (s *FileStore) stored(token *oauth2.Token) storedToken {
+	entry := storedToken{
 		TokenType:    token.TokenType,
 		RefreshToken: token.RefreshToken,
-		Expiry:       token.Expiry.Format(time.RFC3339Nano),
+		Expiry:       time.Time{}.Format(time.RFC3339Nano),
 	}
+
+	if !s.withoutAccessToken {
+		entry.AccessToken = token.AccessToken
+		entry.Expiry = token.Expiry.Format(time.RFC3339Nano)
+	}
+
+	return entry
 }
 
 // setKey replaces the value of key in document, appending it when the

@@ -12,6 +12,12 @@ import (
 
 var endpoint = "http://169.254.169.254/cbws/core/test/token"
 
+// Endpoint reports the metadata token endpoint. It is the issuer half of a
+// token cache key, which needs to name the authority a token was minted by.
+func Endpoint() string {
+	return endpoint
+}
+
 // TokenSource returns a metadata TokenSource
 func TokenSource(ctx context.Context) oauth2.TokenSource {
 	return oauth2.ReuseTokenSource(nil, metadataSource{

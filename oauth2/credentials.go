@@ -12,7 +12,8 @@ import (
 	metadata "go.cbws.cloud/sdk/cbws/metadata/v1alpha1"
 	"go.cbws.cloud/sdk/oauth2/cli"
 	metadata2 "go.cbws.cloud/sdk/oauth2/metadata"
-	"go.cbws.cloud/sdk/oauth2/service-account"
+	service_account "go.cbws.cloud/sdk/oauth2/service-account"
+	"go.cbws.cloud/sdk/oauth2/tokencache"
 
 	"golang.org/x/oauth2"
 )
@@ -23,6 +24,12 @@ type Credentials struct {
 }
 
 func NewFromJSON(ctx context.Context, data []byte, scopes []string) (*Credentials, error) {
+	return NewFromJSONWithOptions(ctx, data, scopes)
+}
+
+// NewFromJSONWithOptions is NewFromJSON with the options a caller may want
+// applied to the resulting source, such as WithTokenCache.
+func NewFromJSONWithOptions(ctx context.Context, data []byte, scopes []string, options ...Option) (*Credentials, error) {
 	credentials := service_account.Credentials{}
 
 	err := json.Unmarshal(data, &credentials)
@@ -34,17 +41,39 @@ func NewFromJSON(ctx context.Context, data []byte, scopes []string) (*Credential
 	if err != nil {
 		return nil, err
 	}
+
+	// The key names the account rather than anything in its key file: the
+	// client id identifies the principal, and nothing derived from the
+	// private key belongs in a cache identifier.
+	tokenSource, err = newSettings(options).cached(tokenSource, tokencache.Key{
+		Issuer:  service_account.TokenURL(),
+		Subject: credentials.ClientID,
+		Scopes:  scopes,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &Credentials{
 		TokenSource: tokenSource,
 		JSON:        data,
-	}, err
+	}, nil
 }
 
 func FindDefaultCredentials(ctx context.Context, scopes ...string) (*Credentials, error) {
+	return FindDefaultCredentialsWithOptions(ctx, scopes)
+}
+
+// FindDefaultCredentialsWithOptions is FindDefaultCredentials with the
+// options a caller may want applied to whichever credential is found, such
+// as WithTokenCache.
+func FindDefaultCredentialsWithOptions(ctx context.Context, scopes []string, options ...Option) (*Credentials, error) {
+	resolved := newSettings(options)
+
 	// First, try the legacy environment variable.
 	const legacyEnvVar = "CLOUDBEAR_CREDENTIALS"
 	if filename := os.Getenv(legacyEnvVar); filename != "" {
-		creds, err := readCredentialsFile(ctx, filename, scopes)
+		creds, err := readCredentialsFile(ctx, filename, scopes, options)
 		if err != nil {
 			return nil, fmt.Errorf("cbws: error getting credentials using %v environment variable: %v", legacyEnvVar, err)
 		}
@@ -54,7 +83,7 @@ func FindDefaultCredentials(ctx context.Context, scopes ...string) (*Credentials
 	// Second, try the environment variable.
 	const envVar = "CBWS_CREDENTIALS"
 	if filename := os.Getenv(envVar); filename != "" {
-		creds, err := readCredentialsFile(ctx, filename, scopes)
+		creds, err := readCredentialsFile(ctx, filename, scopes, options)
 		if err != nil {
 			return nil, fmt.Errorf("cbws: error getting credentials using %v environment variable: %v", envVar, err)
 		}
@@ -63,7 +92,7 @@ func FindDefaultCredentials(ctx context.Context, scopes ...string) (*Credentials
 
 	// Third, try a well-known file.
 	filename := wellKnownFile()
-	if creds, err := readCredentialsFile(ctx, filename, scopes); err == nil {
+	if creds, err := readCredentialsFile(ctx, filename, scopes, options); err == nil {
 		return creds, nil
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("cbws: error getting credentials using well-known file (%v): %v", filename, err)
@@ -75,13 +104,48 @@ func FindDefaultCredentials(ctx context.Context, scopes ...string) (*Credentials
 	// metadata endpoint routinely has a configuration file for its project
 	// name alone.
 	filename = cliConfigFile()
-	if tokenSource, err := cli.NewTokenSourceFromConfig(ctx, filename, scopes); err == nil && tokenSource != nil {
-		return &Credentials{TokenSource: tokenSource}, nil
-	} else if err != nil && !os.IsNotExist(err) && !errors.Is(err, cli.ErrNoToken) {
+
+	// A path says where a credential is read from, not which login wrote
+	// it, so this credential can only be cached once the application has
+	// named the current one. Without that name a cache would go on serving
+	// a token from before a logout, so there is no caching here and the
+	// configuration goes on owning the access token, exactly as it does for
+	// a caller with no cache at all.
+	cacheable := resolved.cache != nil && resolved.generation != ""
+
+	var storeOptions []cli.FileStoreOption
+	if cacheable {
+		storeOptions = append(storeOptions, cli.WithoutAccessToken())
+	}
+
+	if tokenSource, err := cli.NewTokenSource(ctx, cli.NewFileStoreWithOptions(filename, storeOptions...), scopes); err == nil {
+		if !cacheable {
+			return &Credentials{TokenSource: tokenSource}, nil
+		}
+
+		cached, err := resolved.cached(tokenSource, tokencache.Key{
+			Issuer:     cli.Endpoint.TokenURL,
+			Subject:    filename,
+			Scopes:     scopes,
+			Generation: resolved.generation,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return &Credentials{TokenSource: cached}, nil
+	} else if !os.IsNotExist(err) && !errors.Is(err, cli.ErrNoToken) {
 		return nil, fmt.Errorf("cbws: error reading CBWS CLI config file (%v): %v", filename, err)
 	}
 
-	// Fifth, try the CBWS metadata token endpoint
+	// Fifth, try the CBWS metadata token endpoint.
+	//
+	// Deliberately not cached. The endpoint is the same link-local address
+	// on every machine and the service discloses no principal, so nothing
+	// here distinguishes one machine's identity from another's; a cache
+	// kept on shared storage would hand one machine's token to the next.
+	// There is nothing to gain by taking that risk either, since these
+	// tokens live a minute and the endpoint is a link-local request away.
 	if metadata.OnCBWS() {
 		return &Credentials{TokenSource: metadata2.TokenSource(ctx)}, nil
 	}
@@ -114,11 +178,11 @@ func guessUnixHomeDir() string {
 	return ""
 }
 
-func readCredentialsFile(ctx context.Context, filename string, scopes []string) (*Credentials, error) {
+func readCredentialsFile(ctx context.Context, filename string, scopes []string, options []Option) (*Credentials, error) {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewFromJSON(ctx, b, scopes)
+	return NewFromJSONWithOptions(ctx, b, scopes, options...)
 }
