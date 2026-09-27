@@ -3,8 +3,8 @@ package oauth2
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -69,11 +69,15 @@ func FindDefaultCredentials(ctx context.Context, scopes ...string) (*Credentials
 		return nil, fmt.Errorf("cbws: error getting credentials using well-known file (%v): %v", filename, err)
 	}
 
-	// Fourth, try the CBWS CLI config
+	// Fourth, try the CBWS CLI config. A file that is not there and a file
+	// holding no token both mean the CLI is not logged in, which is a
+	// reason to try the next source rather than to fail: a workload with a
+	// metadata endpoint routinely has a configuration file for its project
+	// name alone.
 	filename = cliConfigFile()
 	if tokenSource, err := cli.NewTokenSourceFromConfig(ctx, filename, scopes); err == nil && tokenSource != nil {
 		return &Credentials{TokenSource: tokenSource}, nil
-	} else if err != nil && !os.IsNotExist(err) {
+	} else if err != nil && !os.IsNotExist(err) && !errors.Is(err, cli.ErrNoToken) {
 		return nil, fmt.Errorf("cbws: error reading CBWS CLI config file (%v): %v", filename, err)
 	}
 
@@ -111,7 +115,7 @@ func guessUnixHomeDir() string {
 }
 
 func readCredentialsFile(ctx context.Context, filename string, scopes []string) (*Credentials, error) {
-	b, err := ioutil.ReadFile(filename)
+	b, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}

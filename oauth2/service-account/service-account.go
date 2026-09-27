@@ -30,7 +30,11 @@ type Credentials struct {
 func (c Credentials) TokenSource(ctx context.Context, scopes []string) (oauth2.TokenSource, error) {
 	privateKeyBytes, _ := pem.Decode([]byte(c.PrivateKey))
 	if privateKeyBytes == nil {
-		return nil, nil
+		// Reported rather than returned as a nil source with no error: a
+		// caller choosing between credentials cannot tell those apart from
+		// success, and hands the nil on to be dereferenced on the first
+		// request instead of at the point the key was rejected.
+		return nil, fmt.Errorf("could not decode the private key of %s: no PEM block found", c.ClientEmail)
 	}
 
 	privateKey, err := x509.ParsePKCS8PrivateKey(privateKeyBytes.Bytes)
