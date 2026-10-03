@@ -42,6 +42,16 @@ YOUR_PRIVATE_KEY_CONTENT
 4.  **CBWS Metadata Service**
     Finally, if no credentials are found through the above methods, the SDK will attempt to authenticate using the CBWS metadata service. This method is automatically used when your application is running on CBWS infrastructure (e.g., on a CBWS Virtual Machine or a service deployed within the CBWS platform). It allows for secure and automatic authentication without the need to explicitly manage credentials in your application code or environment.
 
+### Token Endpoint for Service Account Keys (`CBWS_TOKEN_URL`)
+
+A service account key is exchanged for an access token at `https://accounts.cbws.cloud/oauth2/token`. Setting `CBWS_TOKEN_URL` sends that exchange to another address instead, which lets a workload inside the CBWS platform reach the token service directly rather than through the public internet gateway:
+
+```bash
+export CBWS_TOKEN_URL=http://accounts-hydra-public.core-accounts-hydra.svc.cluster.local.:4444/oauth2/token
+```
+
+Only the address changes. The signed assertion is still addressed to the public token URL, and the token that comes back is issued by `https://accounts.cbws.cloud`, so a token obtained either way is the same. The variable applies to service account keys only: CLI logins and the metadata service keep their own endpoints. A program that calls `service_account.SetTokenURL` overrides it.
+
 ### User-Managed vs. Platform-Managed Service Account Keys: Security Considerations
 
 The CBWS platform provides two primary ways to manage service account authentication, each with distinct security implications:

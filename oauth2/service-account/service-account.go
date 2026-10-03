@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
+	"os"
 
 	oauth2_jwt "go.cbws.cloud/sdk/oauth2/jwt"
 
@@ -14,9 +15,19 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var tokenURL = "https://accounts.cbws.cloud/oauth2/token"
+// TokenURLEnvVar names the environment variable that moves the endpoint a
+// key is exchanged at, typically to reach the token service from inside the
+// platform rather than through its public hostname. It moves only the
+// address: the assertion stays addressed to the public token URL, which is
+// the audience the token service checks it against.
+const TokenURLEnvVar = "CBWS_TOKEN_URL"
 
-const audience = "https://accounts.cbws.cloud/oauth2/token"
+const defaultTokenURL = "https://accounts.cbws.cloud/oauth2/token"
+
+const audience = defaultTokenURL
+
+// tokenURL is the endpoint set by SetTokenURL, empty when none was set.
+var tokenURL string
 
 type Credentials struct {
 	Type         string `json:"type"`
@@ -47,7 +58,7 @@ func (c Credentials) TokenSource(ctx context.Context, scopes []string) (oauth2.T
 		Subject:       c.ClientID,
 		PrivateKey:    privateKey,
 		PrivateKeyID:  c.PrivateKeyID,
-		TokenURL:      tokenURL,
+		TokenURL:      TokenURL(),
 		Audience:      audience,
 		SigningMethod: jwt.GetSigningMethod("RS256"),
 		Scopes:        scopes,
@@ -71,13 +82,24 @@ func NewTokenSource(ctx context.Context, credentialsFile string, scopes []string
 	return credentials.TokenSource(ctx, scopes)
 }
 
+// SetTokenURL sets the endpoint keys are exchanged at, taking precedence over
+// TokenURLEnvVar. An empty URL clears it, so the variable or the default
+// applies again.
 func SetTokenURL(newTokenURL string) {
 	tokenURL = newTokenURL
 }
 
-// TokenURL reports the endpoint tokens are obtained from. It is the issuer
-// half of a token cache key, which needs to name the authority a token was
-// minted by so that two environments cannot share an entry.
+// TokenURL reports the endpoint tokens are obtained from: the one set by
+// SetTokenURL, else TokenURLEnvVar, else the public token URL. It is the
+// issuer half of a token cache key, which needs to name the authority a
+// token was minted by so that two environments cannot share an entry.
 func TokenURL() string {
-	return tokenURL
+	if tokenURL != "" {
+		return tokenURL
+	}
+	if fromEnv := os.Getenv(TokenURLEnvVar); fromEnv != "" {
+		return fromEnv
+	}
+
+	return defaultTokenURL
 }
