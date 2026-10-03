@@ -9,7 +9,7 @@ require (
 	github.com/gofrs/flock v0.12.1
 	github.com/golang/protobuf v1.5.4
 	github.com/google/uuid v1.6.0
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	go.cbws.cloud/api v0.100.1
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/genproto v0.0.0-20250303144028-a0af3efb3deb
