@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"go.cbws.cloud/sdk/oauth2/refresh"
 	"golang.org/x/oauth2"
 )
 
@@ -34,7 +35,8 @@ func WithScopes(scopes ...string) Option {
 	}
 }
 
-// TokenSource returns a metadata TokenSource
+// TokenSource returns a metadata TokenSource. It reuses its token and fetches
+// the replacement in the background before it expires.
 func TokenSource(ctx context.Context, options ...Option) oauth2.TokenSource {
 	source := metadataSource{ctx: ctx}
 	for _, option := range options {
@@ -43,7 +45,7 @@ func TokenSource(ctx context.Context, options ...Option) oauth2.TokenSource {
 
 	source.endpoint = requestURL(endpoint, source.scopes)
 
-	return oauth2.ReuseTokenSource(nil, source)
+	return refresh.NewTokenSource(source)
 }
 
 // requestURL adds the requested parameters to base, leaving it untouched

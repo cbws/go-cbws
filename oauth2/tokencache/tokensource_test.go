@@ -13,8 +13,11 @@ import (
 )
 
 // now is the instant the tests reason from, so an expiry is a statement
-// about a token rather than a race with the clock.
-var now = time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+// about a token rather than a race with the clock. It is taken from the wall
+// clock once rather than fixed, because a token this package obtained itself
+// is judged by oauth2.Token.Valid, which reads the wall clock: against a
+// fixed instant every such token is expired once that instant has passed.
+var now = time.Now().UTC().Truncate(time.Second)
 
 func at(offset time.Duration) time.Time { return now.Add(offset) }
 

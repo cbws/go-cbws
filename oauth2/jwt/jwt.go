@@ -13,6 +13,7 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
+	"go.cbws.cloud/sdk/oauth2/refresh"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/jws"
 )
@@ -61,9 +62,10 @@ type Config struct {
 }
 
 // TokenSource returns a JWT TokenSource using the configuration
-// in c and the HTTP client from the provided context.
+// in c and the HTTP client from the provided context. It reuses its token
+// and fetches the replacement in the background before it expires.
 func (c *Config) TokenSource(ctx context.Context) oauth2.TokenSource {
-	return oauth2.ReuseTokenSource(nil, jwtSource{ctx, c})
+	return refresh.NewTokenSource(jwtSource{ctx, c})
 }
 
 // Client returns an HTTP client wrapping the context's
@@ -76,7 +78,7 @@ func (c *Config) Client(ctx context.Context) *http.Client {
 }
 
 // jwtSource is a source that always does a signed JWT request for a token.
-// It should typically be wrapped with a reuseTokenSource.
+// TokenSource wraps it in a refresh.TokenSource.
 type jwtSource struct {
 	ctx  context.Context
 	conf *Config
