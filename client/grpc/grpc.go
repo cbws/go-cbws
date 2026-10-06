@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go.cbws.cloud/sdk/internal/useragent"
+	creds "go.cbws.cloud/sdk/oauth2"
 	"go.cbws.cloud/sdk/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -42,6 +43,9 @@ func (g *GRPCClient) Close() error {
 	return g.client.Close()
 }
 
+// New dials the endpoint the options name. The credentials it builds fetch
+// tokens for as long as the client lives, so ending ctx does not end them:
+// ctx may be a request's context even when the client outlives the request.
 func New(ctx context.Context, opts ...option.ClientOption) (*GRPCClient, error) {
 	o, err := processAndValidateOpts(opts)
 	if err != nil {
@@ -49,7 +53,7 @@ func New(ctx context.Context, opts ...option.ClientOption) (*GRPCClient, error) 
 	}
 
 	if !o.NoAuth {
-		creds, err := o.Creds(ctx)
+		creds, err := clientCredentials(ctx, o)
 		if err != nil {
 			return nil, err
 		}
@@ -73,6 +77,14 @@ func New(ctx context.Context, opts ...option.ClientOption) (*GRPCClient, error) 
 	return &GRPCClient{
 		client: o.GRPCConn,
 	}, nil
+}
+
+// clientCredentials builds the client's credentials on a context that keeps
+// ctx's values but not its cancellation. Token sources hold the context they
+// are built with and make every later token request on it, so a cancellation
+// would fail every refresh once the first token expires.
+func clientCredentials(ctx context.Context, o *option.DialSettings) (*creds.Credentials, error) {
+	return o.Creds(context.WithoutCancel(ctx))
 }
 
 func processAndValidateOpts(opts []option.ClientOption) (*option.DialSettings, error) {

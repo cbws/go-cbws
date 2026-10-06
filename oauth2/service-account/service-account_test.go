@@ -128,9 +128,71 @@ func testCredentials(t *testing.T) Credentials {
 
 	return Credentials{
 		Type:         "service_account",
+		ProjectName:  "project-1",
 		PrivateKeyID: "key-1",
 		PrivateKey:   string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})),
 		ClientEmail:  "sa@example.com",
 		ClientID:     "client-1",
+	}
+}
+
+func TestParseCredentialsAcceptsAKeyFile(t *testing.T) {
+	want := testCredentials(t)
+	data, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("could not marshal the key file: %+v", err)
+	}
+
+	got, err := ParseCredentials(data)
+	if err != nil {
+		t.Fatalf("ParseCredentials: %+v", err)
+	}
+	if *got != want {
+		t.Errorf("ParseCredentials = %+v, want %+v", *got, want)
+	}
+}
+
+func TestParseCredentialsRejects(t *testing.T) {
+	tests := []struct {
+		name   string
+		modify func(*Credentials)
+		data   string
+		want   string
+	}{
+		{name: "not JSON", data: "not json", want: "not a CBWS service account key file"},
+		{name: "wrong type", modify: func(c *Credentials) { c.Type = "authorized_user" }, want: `type "authorized_user"`},
+		{
+			name:   "missing fields",
+			modify: func(c *Credentials) { c.ProjectName, c.ClientID = "", "" },
+			want:   "missing project_name, client_id",
+		},
+		{name: "no PEM block", modify: func(c *Credentials) { c.PrivateKey = "not a key" }, want: "no PEM block"},
+		{
+			name: "not PKCS #8",
+			modify: func(c *Credentials) {
+				c.PrivateKey = string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte("junk")}))
+			},
+			want: "could not parse private key",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := []byte(tt.data)
+			if tt.modify != nil {
+				credentials := testCredentials(t)
+				tt.modify(&credentials)
+
+				var err error
+				if data, err = json.Marshal(credentials); err != nil {
+					t.Fatalf("could not marshal the key file: %+v", err)
+				}
+			}
+
+			_, err := ParseCredentials(data)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("ParseCredentials error = %v, want one containing %q", err, tt.want)
+			}
+		})
 	}
 }

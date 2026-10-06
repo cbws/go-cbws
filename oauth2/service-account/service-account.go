@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 
 	oauth2_jwt "go.cbws.cloud/sdk/oauth2/jwt"
 
@@ -38,7 +39,59 @@ type Credentials struct {
 	ClientID     string `json:"client_id"`
 }
 
-func (c Credentials) TokenSource(ctx context.Context, scopes []string) (oauth2.TokenSource, error) {
+// KeyType is the type every service account key file declares.
+const KeyType = "service_account"
+
+// ParseCredentials parses a service account key file, such as the one IAM
+// returns when it creates a key, and checks it with Validate. It is for a
+// caller that keeps or handles a key file itself; authenticating with one
+// needs only option.WithCredentialsJSON.
+func ParseCredentials(data []byte) (*Credentials, error) {
+	var credentials Credentials
+	if err := json.Unmarshal(data, &credentials); err != nil {
+		return nil, fmt.Errorf("not a CBWS service account key file: %w", err)
+	}
+
+	if err := credentials.Validate(); err != nil {
+		return nil, err
+	}
+
+	return &credentials, nil
+}
+
+// Validate reports whether the credentials are a complete key file as IAM
+// issues it: of KeyType, naming its project, account and key, and holding a
+// private key that parses. Only the token endpoint can say whether a key
+// that passes is still active.
+func (c Credentials) Validate() error {
+	if c.Type != KeyType {
+		return fmt.Errorf("key file has type %q, expected %q", c.Type, KeyType)
+	}
+
+	var missing []string
+	for _, field := range []struct{ name, value string }{
+		{"project_name", c.ProjectName},
+		{"private_key_id", c.PrivateKeyID},
+		{"private_key", c.PrivateKey},
+		{"client_email", c.ClientEmail},
+		{"client_id", c.ClientID},
+	} {
+		if field.value == "" {
+			missing = append(missing, field.name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("key file is missing %s", strings.Join(missing, ", "))
+	}
+
+	_, err := c.privateKey()
+
+	return err
+}
+
+// privateKey decodes the PEM-encoded PKCS #8 key the credentials sign their
+// assertions with.
+func (c Credentials) privateKey() (any, error) {
 	privateKeyBytes, _ := pem.Decode([]byte(c.PrivateKey))
 	if privateKeyBytes == nil {
 		// Reported rather than returned as a nil source with no error: a
@@ -51,6 +104,15 @@ func (c Credentials) TokenSource(ctx context.Context, scopes []string) (oauth2.T
 	privateKey, err := x509.ParsePKCS8PrivateKey(privateKeyBytes.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse private key: %+v", err)
+	}
+
+	return privateKey, nil
+}
+
+func (c Credentials) TokenSource(ctx context.Context, scopes []string) (oauth2.TokenSource, error) {
+	privateKey, err := c.privateKey()
+	if err != nil {
+		return nil, err
 	}
 
 	OAuth2Config := oauth2_jwt.Config{
