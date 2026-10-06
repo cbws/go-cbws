@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -71,6 +72,101 @@ func TestTokenSource(t *testing.T) {
 				// Allow for a small time difference due to test execution time
 				assert.InEpsilon(t, tt.expectedExpiry.Seconds(), time.Until(token.Expiry).Seconds(), 0.1)
 			}
+		})
+	}
+}
+
+// serveJSON points the endpoint at a test server answering with body as
+// contentType, and reports the request headers it received and how many
+// requests it answered.
+func serveJSON(t *testing.T, contentType, body string) (func() http.Header, func() int) {
+	t.Helper()
+
+	var mu sync.Mutex
+	var header http.Header
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		header, requests = r.Header.Clone(), requests+1
+		mu.Unlock()
+		w.Header().Set("Content-Type", contentType)
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(server.Close)
+
+	originalEndpoint := endpoint
+	endpoint = server.URL
+	t.Cleanup(func() { endpoint = originalEndpoint })
+
+	return func() http.Header {
+			mu.Lock()
+			defer mu.Unlock()
+
+			return header
+		}, func() int {
+			mu.Lock()
+			defer mu.Unlock()
+
+			return requests
+		}
+}
+
+func TestTokenSourceAsksForJSON(t *testing.T) {
+	received, _ := serveJSON(t, "text/plain; charset=utf-8", "test_access_token")
+
+	_, err := TokenSource(context.Background()).Token()
+	require.NoError(t, err)
+
+	assert.Equal(t, "application/json", received().Get("Accept"))
+	assert.Equal(t, "application/json", received().Get("Content-Type"), "the metadata server chooses its answer by this header")
+}
+
+// A JSON answer carries the token's real expiry, so the token is held for its
+// lifetime rather than the minute a plain answer is assumed to last.
+func TestTokenSourceHoldsAJSONTokenUntilItsExpiry(t *testing.T) {
+	expiresAt := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	for _, contentType := range []string{"application/json", "application/json; charset=utf-8"} {
+		t.Run(contentType, func(t *testing.T) {
+			_, requests := serveJSON(t, contentType,
+				`{"accessToken":"json_access_token","expiresAt":"`+expiresAt.Format(time.RFC3339)+`","tokenType":"Bearer"}`)
+			source := TokenSource(context.Background())
+
+			token, err := source.Token()
+			require.NoError(t, err)
+			assert.Equal(t, "json_access_token", token.AccessToken)
+			assert.Equal(t, "Bearer", token.TokenType)
+			assert.True(t, token.Expiry.Equal(expiresAt), "expiry %s, want %s", token.Expiry, expiresAt)
+			assert.InDelta(t, time.Hour.Seconds(), float64(token.ExpiresIn), 5)
+
+			_, err = source.Token()
+			require.NoError(t, err)
+			assert.Equal(t, 1, requests(), "served from memory, not asked again")
+		})
+	}
+}
+
+func TestTokenSourceJSONWithoutExpiryAssumesAMinute(t *testing.T) {
+	serveJSON(t, "application/json", `{"accessToken":"json_access_token"}`)
+
+	token, err := TokenSource(context.Background()).Token()
+	require.NoError(t, err)
+
+	assert.Equal(t, "Bearer", token.TokenType)
+	assert.InEpsilon(t, assumedLifetime.Seconds(), time.Until(token.Expiry).Seconds(), 0.1)
+}
+
+func TestTokenSourceRefusesAnUnusableJSONAnswer(t *testing.T) {
+	for name, body := range map[string]string{
+		"no access token": `{"expiresAt":"2030-01-01T00:00:00Z"}`,
+		"malformed":       `{"accessToken":`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			serveJSON(t, "application/json", body)
+
+			token, err := TokenSource(context.Background()).Token()
+
+			assert.Error(t, err)
+			assert.Nil(t, token)
 		})
 	}
 }

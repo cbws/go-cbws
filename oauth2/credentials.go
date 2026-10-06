@@ -171,8 +171,9 @@ func FindDefaultCredentialsWithOptions(ctx context.Context, scopes []string, opt
 	// on every machine and the service discloses no principal, so nothing
 	// here distinguishes one machine's identity from another's; a cache
 	// kept on shared storage would hand one machine's token to the next.
-	// There is nothing to gain by taking that risk either, since these
-	// tokens live a minute and the endpoint is a link-local request away.
+	// There is little to gain by taking that risk either: the source already
+	// holds its token in memory for the token's lifetime, and a new process
+	// is one link-local request away from one.
 	if onCBWS() {
 		return &Credentials{
 			TokenSource: metadataTokenSource(ctx, scopes),

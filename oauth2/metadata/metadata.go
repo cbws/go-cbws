@@ -2,8 +2,11 @@ package metadata
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -81,18 +84,64 @@ func (u UnexpectedMetadataResponse) Error() string {
 	return fmt.Sprintf("unexpected metadata service response code %d: %s", u.StatusCode, u.Body)
 }
 
+// assumedLifetime is how long a token is taken to live when the endpoint does
+// not say. It is short so that a token is never held past its real expiry.
+const assumedLifetime = 60 * time.Second
+
+// tokenResponse is the endpoint's answer to a request for JSON.
+type tokenResponse struct {
+	AccessToken string    `json:"accessToken"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+	TokenType   string    `json:"tokenType"`
+}
+
+// Token asks for the token as JSON, which carries its real expiry, so the
+// source holds it for its whole lifetime rather than re-asking every minute.
+// An endpoint that answers in plain text gets the assumed lifetime instead.
+//
+// The request names JSON in Accept and in Content-Type: the metadata server
+// has chosen its answer by the request's Content-Type.
 func (js metadataSource) Token() (*oauth2.Token, error) {
-	body, err := get(js.ctx, js.endpoint)
+	header := http.Header{
+		"Accept":       {jsonMediaType},
+		"Content-Type": {jsonMediaType},
+	}
+	body, contentType, err := request(js.ctx, js.endpoint, header)
 	if err != nil {
 		return nil, err
 	}
 
-	return &oauth2.Token{
-		AccessToken: body,
-		TokenType:   "Bearer",
-		ExpiresIn:   60,
-		Expiry:      time.Now().Add(60 * time.Second),
-	}, nil
+	if mediaType, _, _ := mime.ParseMediaType(contentType); mediaType != jsonMediaType {
+		return &oauth2.Token{
+			AccessToken: body,
+			TokenType:   "Bearer",
+			ExpiresIn:   int64(assumedLifetime.Seconds()),
+			Expiry:      time.Now().Add(assumedLifetime),
+		}, nil
+	}
+
+	var response tokenResponse
+	if err := json.Unmarshal([]byte(body), &response); err != nil {
+		return nil, fmt.Errorf("could not read the metadata token response: %w", err)
+	}
+	if response.AccessToken == "" {
+		return nil, errors.New("the metadata token response carries no access token")
+	}
+
+	token := &oauth2.Token{
+		AccessToken: response.AccessToken,
+		TokenType:   response.TokenType,
+		Expiry:      response.ExpiresAt,
+	}
+	if token.TokenType == "" {
+		token.TokenType = "Bearer"
+	}
+	if token.Expiry.IsZero() {
+		token.Expiry = time.Now().Add(assumedLifetime)
+	}
+	token.ExpiresIn = int64(time.Until(token.Expiry).Seconds())
+
+	return token, nil
 }
 
 // projectName holds the machine's project once it is known. A machine never
@@ -123,30 +172,43 @@ func ProjectName(ctx context.Context) (string, error) {
 	return projectName.value, nil
 }
 
+const jsonMediaType = "application/json"
+
 // get returns the body of a metadata endpoint, which answers in plain text.
 func get(ctx context.Context, endpoint string) (string, error) {
+	body, _, err := request(ctx, endpoint, nil)
+
+	return body, err
+}
+
+// request returns the body of a metadata endpoint and the content type it
+// answered with.
+func request(ctx context.Context, endpoint string, header http.Header) (string, string, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	for name, values := range header {
+		request.Header[name] = values
 	}
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer func() { _ = response.Body.Close() }()
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	if response.StatusCode != http.StatusOK {
-		return "", UnexpectedMetadataResponse{
+		return "", "", UnexpectedMetadataResponse{
 			StatusCode: response.StatusCode,
 			Body:       string(body),
 		}
 	}
 
-	return string(body), nil
+	return string(body), response.Header.Get("Content-Type"), nil
 }
