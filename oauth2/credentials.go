@@ -67,6 +67,13 @@ func FindDefaultCredentials(ctx context.Context, scopes ...string) (*Credentials
 // FindDefaultCredentialsWithOptions is FindDefaultCredentials with the
 // options a caller may want applied to whichever credential is found, such
 // as WithTokenCache.
+//
+// Every source that mints its tokens requests scopes for them: a service
+// account key and the CBWS metadata endpoint. The CBWS CLI configuration
+// cannot, because it holds a token whose scopes were fixed when the user
+// logged in and a refresh cannot widen them; there scopes only separate
+// cached tokens. Either way the authorization server decides what is
+// granted, so a requested scope is not a guarantee that the token carries it.
 func FindDefaultCredentialsWithOptions(ctx context.Context, scopes []string, options ...Option) (*Credentials, error) {
 	resolved := newSettings(options)
 
@@ -146,12 +153,22 @@ func FindDefaultCredentialsWithOptions(ctx context.Context, scopes []string, opt
 	// kept on shared storage would hand one machine's token to the next.
 	// There is nothing to gain by taking that risk either, since these
 	// tokens live a minute and the endpoint is a link-local request away.
-	if metadata.OnCBWS() {
-		return &Credentials{TokenSource: metadata2.TokenSource(ctx)}, nil
+	if onCBWS() {
+		return &Credentials{TokenSource: metadataTokenSource(ctx, scopes)}, nil
 	}
 
 	return nil, fmt.Errorf("no credentials found")
 }
+
+// onCBWS and metadataTokenSource are variables so tests can stand in for the
+// link-local metadata server, which the metadata package probes once per
+// process and addresses at a fixed endpoint.
+var (
+	onCBWS              = metadata.OnCBWS
+	metadataTokenSource = func(ctx context.Context, scopes []string) oauth2.TokenSource {
+		return metadata2.TokenSource(ctx, metadata2.WithScopes(scopes...))
+	}
+)
 
 func wellKnownFile() string {
 	return filepath.Join(guessUnixHomeDir(), ".config", "cbws", "credentials.json")

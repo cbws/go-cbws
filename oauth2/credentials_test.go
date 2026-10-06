@@ -9,8 +9,11 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"golang.org/x/oauth2"
 )
 
 // tokenConfig is a CBWS CLI configuration of a logged-in user.
@@ -170,6 +173,35 @@ func TestFindDefaultCredentialsUsesTheWellKnownFile(t *testing.T) {
 	}
 	if len(credentials.JSON) == 0 {
 		t.Error("credentials carry no JSON, so the well-known file was not used")
+	}
+}
+
+// TestFindDefaultCredentialsPassesScopesToMetadata covers a workload on a
+// machine, the last source tried. The scopes it asks for used to be dropped
+// there, so the token it got carried none whatever it requested.
+func TestFindDefaultCredentialsPassesScopesToMetadata(t *testing.T) {
+	isolate(t)
+
+	originalOnCBWS, originalSource := onCBWS, metadataTokenSource
+	t.Cleanup(func() { onCBWS, metadataTokenSource = originalOnCBWS, originalSource })
+
+	var requested []string
+	onCBWS = func() bool { return true }
+	metadataTokenSource = func(_ context.Context, scopes []string) oauth2.TokenSource {
+		requested = scopes
+
+		return oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "at"})
+	}
+
+	credentials, err := FindDefaultCredentials(context.Background(), "openid", "email")
+	if err != nil {
+		t.Fatalf("FindDefaultCredentials: %+v", err)
+	}
+	if credentials.TokenSource == nil {
+		t.Fatal("credentials carry no token source")
+	}
+	if !slices.Equal(requested, []string{"openid", "email"}) {
+		t.Errorf("metadata source requested %v, want [openid email]", requested)
 	}
 }
 

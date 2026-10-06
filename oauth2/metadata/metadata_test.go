@@ -5,10 +5,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTokenSource(t *testing.T) {
@@ -71,4 +73,100 @@ func TestTokenSource(t *testing.T) {
 			}
 		})
 	}
+}
+
+// serveToken points the endpoint at a test server answering with a token, and
+// reports the URL of the last request it received.
+func serveToken(t *testing.T) func() *url.URL {
+	t.Helper()
+
+	var received *url.URL
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received = r.URL
+		_, _ = io.WriteString(w, "test_access_token")
+	}))
+	t.Cleanup(server.Close)
+
+	originalEndpoint := endpoint
+	endpoint = server.URL
+	t.Cleanup(func() { endpoint = originalEndpoint })
+
+	return func() *url.URL { return received }
+}
+
+func TestTokenSourceRequestsScopes(t *testing.T) {
+	tests := []struct {
+		name          string
+		options       []Option
+		expectedQuery url.Values
+	}{
+		{
+			name: "no options",
+		},
+		{
+			name:    "no scopes",
+			options: []Option{WithScopes()},
+		},
+		{
+			name:          "one scope",
+			options:       []Option{WithScopes("email")},
+			expectedQuery: url.Values{"scopes": {"email"}},
+		},
+		{
+			name:          "several scopes keep their order",
+			options:       []Option{WithScopes("openid", "email")},
+			expectedQuery: url.Values{"scopes": {"openid", "email"}},
+		},
+		{
+			name:          "repeated options accumulate",
+			options:       []Option{WithScopes("openid"), WithScopes("email")},
+			expectedQuery: url.Values{"scopes": {"openid", "email"}},
+		},
+		{
+			name:          "reserved characters arrive intact",
+			options:       []Option{WithScopes("a,b", "c&d=e")},
+			expectedQuery: url.Values{"scopes": {"a,b", "c&d=e"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			received := serveToken(t)
+
+			_, err := TokenSource(context.Background(), tt.options...).Token()
+			require.NoError(t, err)
+			require.NotNil(t, received())
+
+			if tt.expectedQuery == nil {
+				// A request without scopes stays exactly the request made
+				// before there were options.
+				assert.Empty(t, received().RawQuery)
+
+				return
+			}
+			assert.Equal(t, tt.expectedQuery, received().Query())
+		})
+	}
+}
+
+func TestWithScopesCopiesTheCallersSlice(t *testing.T) {
+	received := serveToken(t)
+
+	scopes := []string{"email"}
+	source := TokenSource(context.Background(), WithScopes(scopes...))
+	scopes[0] = "changed"
+
+	_, err := source.Token()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"email"}, received().Query()["scopes"])
+}
+
+func TestTokenSourceHonoursContext(t *testing.T) {
+	serveToken(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := TokenSource(ctx).Token()
+	assert.ErrorIs(t, err, context.Canceled)
 }
