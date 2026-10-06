@@ -56,6 +56,13 @@ func TestFindDefaultCredentialsUsesCLIConfig(t *testing.T) {
 	if credentials.TokenSource == nil {
 		t.Error("credentials carry no token source")
 	}
+
+	// The configuration's project_name is where the CLI is switched to, not
+	// a property of the login, so it is not the credential's project.
+	name, err := credentials.ProjectName(context.Background())
+	if err != nil || name != "" {
+		t.Errorf("ProjectName() = %q, %v, want no project for a login", name, err)
+	}
 }
 
 // TestFindDefaultCredentialsSkipsTokenlessConfig is the regression test for
@@ -174,6 +181,46 @@ func TestFindDefaultCredentialsUsesTheWellKnownFile(t *testing.T) {
 	if len(credentials.JSON) == 0 {
 		t.Error("credentials carry no JSON, so the well-known file was not used")
 	}
+
+	name, err := credentials.ProjectName(context.Background())
+	if err != nil || name != "my-project" {
+		t.Errorf("ProjectName() = %q, %v, want the key's project", name, err)
+	}
+}
+
+// TestFindDefaultCredentialsAsksMetadataForTheProject: on a machine the
+// project comes from the metadata server, and only once somebody asks.
+func TestFindDefaultCredentialsAsksMetadataForTheProject(t *testing.T) {
+	isolate(t)
+
+	originalOnCBWS, originalSource, originalProject := onCBWS, metadataTokenSource, metadataProjectName
+	t.Cleanup(func() {
+		onCBWS, metadataTokenSource, metadataProjectName = originalOnCBWS, originalSource, originalProject
+	})
+
+	asked := 0
+	onCBWS = func() bool { return true }
+	metadataTokenSource = func(context.Context, []string) oauth2.TokenSource {
+		return oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "at"})
+	}
+	metadataProjectName = func(context.Context) (string, error) {
+		asked++
+
+		return "machine-project", nil
+	}
+
+	credentials, err := FindDefaultCredentials(context.Background())
+	if err != nil {
+		t.Fatalf("FindDefaultCredentials: %+v", err)
+	}
+	if asked != 0 {
+		t.Errorf("finding credentials asked for the project %d times, want it left until needed", asked)
+	}
+
+	name, err := credentials.ProjectName(context.Background())
+	if err != nil || name != "machine-project" {
+		t.Errorf("ProjectName() = %q, %v, want the machine's project", name, err)
+	}
 }
 
 // TestFindDefaultCredentialsPassesScopesToMetadata covers a workload on a
@@ -218,6 +265,20 @@ func TestNewFromJSON(t *testing.T) {
 		}
 		if credentials.TokenSource == nil {
 			t.Error("credentials carry no token source")
+		}
+
+		name, err := credentials.ProjectName(context.Background())
+		if err != nil || name != "my-project" {
+			t.Errorf("ProjectName() = %q, %v, want the key's project", name, err)
+		}
+	})
+
+	// Credentials built by hand, as callers outside this package do, have no
+	// project lookup at all and must not panic for it.
+	t.Run("a zero value", func(t *testing.T) {
+		name, err := (&Credentials{}).ProjectName(context.Background())
+		if err != nil || name != "" {
+			t.Errorf("ProjectName() = %q, %v, want no project", name, err)
 		}
 	})
 

@@ -21,6 +21,23 @@ import (
 type Credentials struct {
 	TokenSource oauth2.TokenSource
 	JSON        []byte
+
+	projectName func(context.Context) (string, error)
+}
+
+// ProjectName reports the project the credentials belong to: the project
+// named in a service account key, or the project of the machine whose
+// metadata endpoint mints the tokens. Credentials that are not bound to a
+// project, such as a user's CLI login, report an empty name and no error.
+//
+// It is a method rather than a field because the metadata endpoint has to be
+// asked, and a caller that never wants the project should not pay for that.
+func (c *Credentials) ProjectName(ctx context.Context) (string, error) {
+	if c.projectName == nil {
+		return "", nil
+	}
+
+	return c.projectName(ctx)
 }
 
 func NewFromJSON(ctx context.Context, data []byte, scopes []string) (*Credentials, error) {
@@ -57,6 +74,9 @@ func NewFromJSONWithOptions(ctx context.Context, data []byte, scopes []string, o
 	return &Credentials{
 		TokenSource: tokenSource,
 		JSON:        data,
+		projectName: func(context.Context) (string, error) {
+			return credentials.ProjectName, nil
+		},
 	}, nil
 }
 
@@ -154,20 +174,24 @@ func FindDefaultCredentialsWithOptions(ctx context.Context, scopes []string, opt
 	// There is nothing to gain by taking that risk either, since these
 	// tokens live a minute and the endpoint is a link-local request away.
 	if onCBWS() {
-		return &Credentials{TokenSource: metadataTokenSource(ctx, scopes)}, nil
+		return &Credentials{
+			TokenSource: metadataTokenSource(ctx, scopes),
+			projectName: metadataProjectName,
+		}, nil
 	}
 
 	return nil, fmt.Errorf("no credentials found")
 }
 
-// onCBWS and metadataTokenSource are variables so tests can stand in for the
-// link-local metadata server, which the metadata package probes once per
-// process and addresses at a fixed endpoint.
+// onCBWS, metadataTokenSource and metadataProjectName are variables so tests
+// can stand in for the link-local metadata server, which the metadata package
+// probes once per process and addresses at a fixed endpoint.
 var (
 	onCBWS              = metadata.OnCBWS
 	metadataTokenSource = func(ctx context.Context, scopes []string) oauth2.TokenSource {
 		return metadata2.TokenSource(ctx, metadata2.WithScopes(scopes...))
 	}
+	metadataProjectName = metadata2.ProjectName
 )
 
 func wellKnownFile() string {

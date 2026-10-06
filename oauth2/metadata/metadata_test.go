@@ -161,6 +161,53 @@ func TestWithScopesCopiesTheCallersSlice(t *testing.T) {
 	assert.Equal(t, []string{"email"}, received().Query()["scopes"])
 }
 
+func TestProjectName(t *testing.T) {
+	// serve answers the project endpoint and forgets any project an earlier
+	// test left behind. It reports how many requests the server received.
+	serve := func(t *testing.T, status int, body string) func() int {
+		t.Helper()
+
+		requests := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			requests++
+			w.WriteHeader(status)
+			_, _ = io.WriteString(w, body)
+		}))
+		t.Cleanup(server.Close)
+
+		original := projectNameEndpoint
+		projectNameEndpoint = server.URL
+		projectName.value = ""
+		t.Cleanup(func() {
+			projectNameEndpoint = original
+			projectName.value = ""
+		})
+
+		return func() int { return requests }
+	}
+
+	t.Run("the machine's project, asked for once", func(t *testing.T) {
+		requests := serve(t, http.StatusOK, "my-project\n")
+
+		for range 2 {
+			name, err := ProjectName(context.Background())
+			require.NoError(t, err)
+			assert.Equal(t, "my-project", name)
+		}
+		assert.Equal(t, 1, requests())
+	})
+
+	t.Run("an error response, asked for again", func(t *testing.T) {
+		requests := serve(t, http.StatusForbidden, "unknown machine")
+
+		for range 2 {
+			_, err := ProjectName(context.Background())
+			assert.EqualError(t, err, "unexpected metadata service response code 403: unknown machine")
+		}
+		assert.Equal(t, 2, requests())
+	})
+}
+
 func TestTokenSourceHonoursContext(t *testing.T) {
 	serveToken(t)
 
