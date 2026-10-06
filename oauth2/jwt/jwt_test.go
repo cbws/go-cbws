@@ -1,14 +1,21 @@
 package jwt
 
 import (
+	"context"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.cbws.cloud/sdk/internal/useragent"
 )
 
 func TestAssertionExpiry(t *testing.T) {
@@ -52,4 +59,31 @@ func TestAssertionExpiry(t *testing.T) {
 
 	assert.True(t, token.Valid)
 	assert.Greater(t, int(time.Unix(claims.ExpiresAt, 0).Sub(time.Now()).Seconds()), 1800)
+}
+
+func TestTokenRequestIdentifiesTheSDK(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	var received http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received = r.Header.Clone()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"access_token":"at","token_type":"bearer","expires_in":3600}`)
+	}))
+	defer server.Close()
+
+	js := jwtSource{
+		ctx: context.Background(),
+		conf: &Config{
+			PrivateKey:    privateKey,
+			TokenURL:      server.URL,
+			SigningMethod: jwt.GetSigningMethod("RS256"),
+		},
+	}
+	_, err = js.Token()
+	require.NoError(t, err)
+
+	assert.Equal(t, useragent.SDK(), received.Get("User-Agent"))
+	assert.Equal(t, useragent.APIClient(), received.Get(useragent.APIClientHeader))
 }

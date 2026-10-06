@@ -16,7 +16,6 @@ const endpoint = "dns:///compute.cbws.cloud:443"
 func NewClient(ctx context.Context, project string, opts ...option.ClientOption) (*Client, error) {
 	o := []option.ClientOption{
 		option.WithEndpoint(endpoint),
-		option.WithUserAgent("go-cbws compute"),
 	}
 	o = append(o, opts...)
 

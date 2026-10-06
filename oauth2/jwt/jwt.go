@@ -13,6 +13,7 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
+	"go.cbws.cloud/sdk/internal/useragent"
 	"go.cbws.cloud/sdk/oauth2/refresh"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/jws"
@@ -85,7 +86,7 @@ type jwtSource struct {
 }
 
 func (js jwtSource) Token() (*oauth2.Token, error) {
-	hc := oauth2.NewClient(js.ctx, nil)
+	hc := oauth2.NewClient(useragent.Context(js.ctx), nil)
 
 	payload, err := js.assertion()
 	if err != nil {

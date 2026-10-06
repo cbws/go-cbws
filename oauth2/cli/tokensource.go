@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"go.cbws.cloud/sdk/internal/useragent"
 	"golang.org/x/oauth2"
 )
 
@@ -136,7 +137,7 @@ func (s *TokenSource) Token() (*oauth2.Token, error) {
 		return s.token, nil
 	}
 
-	token, err := s.conf.TokenSource(s.ctx, s.token).Token()
+	token, err := s.conf.TokenSource(useragent.Context(s.ctx), s.token).Token()
 	if err != nil {
 		return nil, fmt.Errorf("could not refresh token, run 'cbws init' to log in again: %w", err)
 	}

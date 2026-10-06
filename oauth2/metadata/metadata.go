@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"go.cbws.cloud/sdk/internal/useragent"
 	"go.cbws.cloud/sdk/oauth2/refresh"
 	"golang.org/x/oauth2"
 )
@@ -191,6 +192,7 @@ func request(ctx context.Context, endpoint string, header http.Header) (string, 
 	for name, values := range header {
 		request.Header[name] = values
 	}
+	useragent.SetHTTP(request.Header)
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {

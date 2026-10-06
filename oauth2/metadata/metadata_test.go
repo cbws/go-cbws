@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.cbws.cloud/sdk/internal/useragent"
 )
 
 func TestTokenSource(t *testing.T) {
@@ -119,6 +120,16 @@ func TestTokenSourceAsksForJSON(t *testing.T) {
 
 	assert.Equal(t, "application/json", received().Get("Accept"))
 	assert.Equal(t, "application/json", received().Get("Content-Type"), "the metadata server chooses its answer by this header")
+}
+
+func TestTokenRequestIdentifiesTheSDK(t *testing.T) {
+	received, _ := serveJSON(t, "text/plain; charset=utf-8", "test_access_token")
+
+	_, err := TokenSource(context.Background()).Token()
+	require.NoError(t, err)
+
+	assert.Equal(t, useragent.SDK(), received().Get("User-Agent"))
+	assert.Equal(t, useragent.APIClient(), received().Get(useragent.APIClientHeader))
 }
 
 // A JSON answer carries the token's real expiry, so the token is held for its

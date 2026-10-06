@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.cbws.cloud/sdk/internal/useragent"
 )
 
 func newDefaultHTTPClient() *http.Client {
@@ -47,7 +49,7 @@ func testOnCBWS() bool {
 	// See https://github.com/googleapis/google-cloud-go/issues/194
 	go func() {
 		req, _ := http.NewRequest("GET", "http://169.254.169.254/cbws/core/test", nil)
-		req.Header.Set("User-Agent", "go-cbws")
+		useragent.SetHTTP(req.Header)
 		res, err := newDefaultHTTPClient().Do(req.WithContext(ctx))
 		if err != nil {
 			resc <- false

@@ -189,7 +189,11 @@ func (w withScopes) Apply(o *DialSettings) {
 	copy(o.Scopes, w)
 }
 
-// WithUserAgent returns a ClientOption that sets the User-Agent.
+// WithUserAgent returns a ClientOption that sets the application's part of
+// the User-Agent, conventionally its name and version such as
+// "cbws-cli/0.61.0". The SDK always appends its own name and version after
+// it, and grpc-go appends its own after that. Neither part is sent over a
+// connection passed in with WithGRPCConn, which was dialled by the caller.
 func WithUserAgent(ua string) ClientOption {
 	return withUA(ua)
 }

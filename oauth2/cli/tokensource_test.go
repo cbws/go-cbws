@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"go.cbws.cloud/sdk/internal/useragent"
 	"golang.org/x/oauth2"
 )
 
@@ -28,6 +29,9 @@ type fakeTokenEndpoint struct {
 	accepted  map[string]bool
 	presented []string
 	issued    int
+
+	// headers holds the headers of the most recent request.
+	headers http.Header
 }
 
 func newFakeTokenEndpoint(accept ...string) *fakeTokenEndpoint {
@@ -46,6 +50,7 @@ func (f *fakeTokenEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.presented = append(f.presented, presented)
+	f.headers = r.Header.Clone()
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -194,6 +199,25 @@ func TestTokenRefreshedOnceAndPersisted(t *testing.T) {
 	}
 	if got := storedValue(t, path, "project_name"); got != "my-project" {
 		t.Errorf("project_name = %q, want it untouched", got)
+	}
+}
+
+func TestTokenRefreshIdentifiesTheSDK(t *testing.T) {
+	endpoint := newFakeTokenEndpoint("rt-0")
+	source, _ := newTestSource(t, endpoint, expiredConfig)
+
+	if _, err := source.Token(); err != nil {
+		t.Fatalf("Token: %+v", err)
+	}
+
+	endpoint.mu.Lock()
+	defer endpoint.mu.Unlock()
+
+	if got, want := endpoint.headers.Get("User-Agent"), useragent.SDK(); got != want {
+		t.Errorf("User-Agent = %q, want %q", got, want)
+	}
+	if got, want := endpoint.headers.Get(useragent.APIClientHeader), useragent.APIClient(); got != want {
+		t.Errorf("%s = %q, want %q", useragent.APIClientHeader, got, want)
 	}
 }
 

@@ -13,7 +13,6 @@ import (
 func NewClient(ctx context.Context, endpoint string, opts ...option.ClientOption) (*Client, error) {
 	o := []option.ClientOption{
 		option.WithEndpoint(endpoint),
-		option.WithUserAgent("go-cbws longrunning"),
 	}
 	o = append(o, opts...)
 
