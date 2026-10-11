@@ -348,3 +348,333 @@ func writeServiceAccountKey(t *testing.T, dir string) string {
 
 	return path
 }
+
+// TestFindsTheConfigurationTheCLIWrites is the regression for a lookup
+// that never found one. The CLI writes a dotfile and this package looked
+// for the undotted name, so unless CBWS_CONFIG_FILE was set the CLI
+// credential was skipped on every machine: an SDK tool could not pick up
+// whoever had run `cbws init`, which is the whole point of that step.
+//
+// The candidates are tried in order rather than chosen between, so a
+// dotfile holding no credential does not stop the older name being read.
+func TestFindsTheConfigurationTheCLIWrites(t *testing.T) {
+	tokenless := "project_name: my-project\n"
+	dotted := configHolding("at-dotted")
+	undotted := configHolding("at-undotted")
+
+	for _, test := range []struct {
+		name  string
+		write map[string]string
+		want  string
+	}{
+		{
+			name:  "the dotfile the CLI writes",
+			write: map[string]string{".cbws.yaml": dotted},
+			want:  "at-dotted",
+		},
+		{
+			// Kept working rather than dropped, for a machine that
+			// somehow has one.
+			name:  "the undotted name this package used to look for",
+			write: map[string]string{"cbws.yaml": undotted},
+			want:  "at-undotted",
+		},
+		{
+			name:  "both, and the CLI's own wins",
+			write: map[string]string{".cbws.yaml": dotted, "cbws.yaml": undotted},
+			want:  "at-dotted",
+		},
+		{
+			// The case that makes this an ordered list rather than a
+			// choice: a configuration holding a project name and no
+			// credential must not stop the next candidate being read.
+			name:  "a tokenless dotfile does not shadow the older name",
+			write: map[string]string{".cbws.yaml": tokenless, "cbws.yaml": undotted},
+			want:  "at-undotted",
+		},
+		{
+			name:  "a dotfile that is not a file does not shadow it either",
+			write: map[string]string{"cbws.yaml": undotted},
+			want:  "at-undotted",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			home := isolate(t)
+
+			// The override is what used to be the only way here, so it is
+			// cleared to exercise the default.
+			t.Setenv("CBWS_CONFIG_FILE", "")
+
+			for name, content := range test.write {
+				if err := os.WriteFile(filepath.Join(home, name), []byte(content), 0o600); err != nil {
+					t.Fatalf("could not write %s: %+v", name, err)
+				}
+			}
+
+			if test.name == "a dotfile that is not a file does not shadow it either" {
+				if err := os.Mkdir(filepath.Join(home, ".cbws.yaml"), 0o700); err != nil {
+					t.Fatalf("Mkdir: %+v", err)
+				}
+			}
+
+			credentials, err := FindDefaultCredentialsWithOptions(context.Background(), nil)
+			if err != nil {
+				t.Fatalf("FindDefaultCredentials: %+v", err)
+			}
+
+			assertServes(t, credentials, test.want)
+		})
+	}
+}
+
+// configHolding is a CLI configuration whose access token is still valid,
+// so a source built from it answers without going anywhere. Which token
+// comes back is how a test tells which file was read.
+func configHolding(accessToken string) string {
+	return "project_name: my-project\noauth_token:\n" +
+		"    accesstoken: " + accessToken + "\n" +
+		"    tokentype: bearer\n" +
+		"    refreshtoken: rt-0\n" +
+		"    expiry: 2199-01-01T00:00:00Z\n"
+}
+
+// assertServes checks which configuration a credential came out of, by the
+// token it hands over.
+func assertServes(t *testing.T, credentials *Credentials, want string) {
+	t.Helper()
+
+	token, err := credentials.TokenSource.Token()
+	if err != nil {
+		t.Fatalf("Token: %+v", err)
+	}
+	if token.AccessToken != want {
+		t.Errorf("served %q, want %q", token.AccessToken, want)
+	}
+}
+
+// TestTheOverrideStillWins: CBWS_CONFIG_FILE has been the only way this
+// lookup ever reached a CLI credential, so whatever else changes, it keeps
+// working.
+func TestTheOverrideStillWins(t *testing.T) {
+	home := isolate(t)
+
+	// A dotfile in the home directory that must not be preferred over the
+	// one named explicitly.
+	if err := os.WriteFile(filepath.Join(home, ".cbws.yaml"), []byte(configHolding("at-dotted")), 0o600); err != nil {
+		t.Fatalf("WriteFile: %+v", err)
+	}
+
+	elsewhere := filepath.Join(t.TempDir(), "named.yaml")
+	if err := os.WriteFile(elsewhere, []byte(configHolding("at-named")), 0o600); err != nil {
+		t.Fatalf("WriteFile: %+v", err)
+	}
+	t.Setenv("CBWS_CONFIG_FILE", elsewhere)
+
+	credentials, err := FindDefaultCredentialsWithOptions(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("FindDefaultCredentials: %+v", err)
+	}
+
+	assertServes(t, credentials, "at-named")
+
+	// And nothing else is considered: naming one configuration and having
+	// another read instead would answer a different question.
+	if got := cliConfigFiles(); len(got) != 1 || got[0] != elsewhere {
+		t.Errorf("candidates = %v, want only the named file", got)
+	}
+}
+
+// TestAConfigurationThatIsNotAFile: a directory or a FIFO named like the
+// configuration is an absent configuration rather than a broken one. The
+// difference matters: reported as broken it fails the whole lookup, and a
+// FIFO read would not return at all.
+func TestAConfigurationThatIsNotAFile(t *testing.T) {
+	for _, name := range []string{".cbws.yaml", "cbws.yaml"} {
+		t.Run(name+" as a directory", func(t *testing.T) {
+			home := isolate(t)
+			t.Setenv("CBWS_CONFIG_FILE", "")
+
+			if err := os.Mkdir(filepath.Join(home, name), 0o700); err != nil {
+				t.Fatalf("Mkdir: %+v", err)
+			}
+
+			// Nothing else to find, so the lookup runs out rather than
+			// failing on the directory.
+			_, err := FindDefaultCredentialsWithOptions(context.Background(), nil)
+			if err != nil && strings.Contains(err.Error(), "CBWS CLI config file") {
+				t.Errorf("error = %v, want the directory stepped over", err)
+			}
+		})
+	}
+}
+
+// TestAnExplicitConfigurationIsNotAuthoritative documents what happens when
+// CBWS_CONFIG_FILE names a configuration that is not there or holds no
+// credential: the lookup carries on to the next source rather than
+// stopping.
+//
+// That is not the same as the service account variables, which fail when
+// the file they name is missing, and it means a configuration that has gone
+// astray can be answered by the machine's own identity instead. It is long
+// standing behaviour and changing it is its own decision, so it is pinned
+// here rather than left to be discovered.
+func TestAnExplicitConfigurationIsNotAuthoritative(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		write string
+	}{
+		{name: "missing"},
+		{name: "holding no credential", write: "project_name: my-project\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			home := isolate(t)
+
+			named := filepath.Join(home, "named.yaml")
+			if test.write != "" {
+				if err := os.WriteFile(named, []byte(test.write), 0o600); err != nil {
+					t.Fatalf("WriteFile: %+v", err)
+				}
+			}
+			t.Setenv("CBWS_CONFIG_FILE", named)
+
+			_, err := FindDefaultCredentialsWithOptions(context.Background(), nil)
+			if err != nil && strings.Contains(err.Error(), "CBWS CLI config file") {
+				t.Errorf("error = %v, want the lookup to have carried on", err)
+			}
+		})
+	}
+}
+
+// TestAMalformedConfigurationStopsTheLookup: a configuration that is there
+// and cannot be read is not a reason to go looking for another identity.
+func TestAMalformedConfigurationStopsTheLookup(t *testing.T) {
+	home := isolate(t)
+	t.Setenv("CBWS_CONFIG_FILE", "")
+
+	if err := os.WriteFile(filepath.Join(home, ".cbws.yaml"), []byte("oauth_token: [unclosed\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %+v", err)
+	}
+	// A perfectly good one behind it, which must not be reached.
+	if err := os.WriteFile(filepath.Join(home, "cbws.yaml"), []byte(tokenConfig), 0o600); err != nil {
+		t.Fatalf("WriteFile: %+v", err)
+	}
+
+	_, err := FindDefaultCredentialsWithOptions(context.Background(), nil)
+	if err == nil {
+		t.Fatal("a malformed configuration was stepped over")
+	}
+	if !strings.Contains(err.Error(), "CBWS CLI config file") {
+		t.Errorf("error = %v, want it to name the configuration", err)
+	}
+}
+
+// TestAConfigurationThatCannotBeLookedAtStopsTheLookup: not being there is
+// an answer and the lookup moves on. Not being able to tell is not, and
+// reading it as one would step over a configuration that may hold a
+// credential and go on to authenticate as the machine.
+func TestAConfigurationThatCannotBeLookedAtStopsTheLookup(t *testing.T) {
+	// A symlink loop: something is at the path, and no amount of looking
+	// says what.
+	looping := func(t *testing.T, dir string) string {
+		t.Helper()
+
+		path := filepath.Join(dir, "looping.yaml")
+		if err := os.Symlink(path, path); err != nil {
+			t.Fatalf("Symlink: %+v", err)
+		}
+
+		return path
+	}
+
+	t.Run("named explicitly", func(t *testing.T) {
+		home := isolate(t)
+		t.Setenv("CBWS_CONFIG_FILE", looping(t, home))
+
+		_, err := FindDefaultCredentialsWithOptions(context.Background(), nil)
+		if err == nil {
+			t.Fatal("a configuration that could not be looked at was stepped over")
+		}
+		if !strings.Contains(err.Error(), "CBWS CLI config file") {
+			t.Errorf("error = %v, want it to name the configuration", err)
+		}
+	})
+
+	t.Run("found by default", func(t *testing.T) {
+		home := isolate(t)
+		t.Setenv("CBWS_CONFIG_FILE", "")
+
+		path := filepath.Join(home, ".cbws.yaml")
+		if err := os.Symlink(path, path); err != nil {
+			t.Fatalf("Symlink: %+v", err)
+		}
+
+		// A perfectly good one behind it, which must not be reached: the
+		// first candidate might have been the one that mattered.
+		if err := os.WriteFile(filepath.Join(home, "cbws.yaml"), []byte(configHolding("at-undotted")), 0o600); err != nil {
+			t.Fatalf("WriteFile: %+v", err)
+		}
+
+		_, err := FindDefaultCredentialsWithOptions(context.Background(), nil)
+		if err == nil {
+			t.Fatal("a configuration that could not be looked at was stepped over")
+		}
+	})
+}
+
+// TestIsFileTellsAbsenceFromNotKnowing is the distinction the lookup rests
+// on, stated on its own.
+func TestIsFileTellsAbsenceFromNotKnowing(t *testing.T) {
+	dir := t.TempDir()
+
+	regular := filepath.Join(dir, "regular.yaml")
+	if err := os.WriteFile(regular, nil, 0o600); err != nil {
+		t.Fatalf("WriteFile: %+v", err)
+	}
+
+	directory := filepath.Join(dir, "directory")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		t.Fatalf("Mkdir: %+v", err)
+	}
+
+	looping := filepath.Join(dir, "looping")
+	if err := os.Symlink(looping, looping); err != nil {
+		t.Fatalf("Symlink: %+v", err)
+	}
+
+	dangling := filepath.Join(dir, "dangling")
+	if err := os.Symlink(filepath.Join(dir, "gone"), dangling); err != nil {
+		t.Fatalf("Symlink: %+v", err)
+	}
+
+	for _, test := range []struct {
+		name    string
+		path    string
+		want    bool
+		wantErr bool
+	}{
+		{name: "a regular file", path: regular, want: true},
+		{name: "nothing there", path: filepath.Join(dir, "absent.yaml")},
+		{name: "a directory", path: directory},
+		{name: "a symlink loop", path: looping, wantErr: true},
+		{name: "a symlink to nothing", path: dangling, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := isFile(test.path)
+
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("no error for a path that could not be looked at")
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("isFile: %+v", err)
+			}
+			if got != test.want {
+				t.Errorf("isFile = %v, want %v", got, test.want)
+			}
+		})
+	}
+}

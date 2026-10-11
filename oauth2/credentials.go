@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -130,39 +131,14 @@ func FindDefaultCredentialsWithOptions(ctx context.Context, scopes []string, opt
 	// reason to try the next source rather than to fail: a workload with a
 	// metadata endpoint routinely has a configuration file for its project
 	// name alone.
-	filename = cliConfigFile()
-
-	// A path says where a credential is read from, not which login wrote
-	// it, so this credential can only be cached once the application has
-	// named the current one. Without that name a cache would go on serving
-	// a token from before a logout, so there is no caching here and the
-	// configuration goes on owning the access token, exactly as it does for
-	// a caller with no cache at all.
-	cacheable := resolved.cache != nil && resolved.generation != ""
-
-	var storeOptions []cli.FileStoreOption
-	if cacheable {
-		storeOptions = append(storeOptions, cli.WithoutAccessToken())
-	}
-
-	if tokenSource, err := cli.NewTokenSource(ctx, cli.NewFileStoreWithOptions(filename, storeOptions...), scopes); err == nil {
-		if !cacheable {
-			return &Credentials{TokenSource: tokenSource}, nil
-		}
-
-		cached, err := resolved.cached(tokenSource, tokencache.Key{
-			Issuer:     cli.Endpoint.TokenURL,
-			Subject:    filename,
-			Scopes:     scopes,
-			Generation: resolved.generation,
-		})
+	for _, filename := range cliConfigFiles() {
+		credentials, err := resolved.cliCredentials(ctx, filename, scopes)
 		if err != nil {
 			return nil, err
 		}
-
-		return &Credentials{TokenSource: cached}, nil
-	} else if !os.IsNotExist(err) && !errors.Is(err, cli.ErrNoToken) {
-		return nil, fmt.Errorf("cbws: error reading CBWS CLI config file (%v): %v", filename, err)
+		if credentials != nil {
+			return credentials, nil
+		}
 	}
 
 	// Fifth, try the CBWS metadata token endpoint.
@@ -199,12 +175,132 @@ func wellKnownFile() string {
 	return filepath.Join(guessUnixHomeDir(), ".config", "cbws", "credentials.json")
 }
 
-func cliConfigFile() string {
-	if os.Getenv("CBWS_CONFIG_FILE") != "" {
-		return os.Getenv("CBWS_CONFIG_FILE")
+// cliConfigFiles is where the CBWS CLI keeps the credential this package
+// reads when nothing else has supplied one, in the order they are tried.
+//
+// The CLI writes a dotfile, and has for as long as it has existed: its
+// --config flag documents ~/.cbws.yaml, viper is pointed at it, and the
+// file a refreshed token is persisted to is that one. The undotted name
+// comes after it rather than instead of it, so a machine that somehow has
+// one goes on working.
+//
+// A configuration named explicitly is the only one considered. Naming one
+// and having another read instead would be answering a different question
+// than the one asked.
+func cliConfigFiles() []string {
+	if path := os.Getenv("CBWS_CONFIG_FILE"); path != "" {
+		return []string{path}
 	}
 
-	return filepath.Join(guessUnixHomeDir(), "cbws.yaml")
+	home := guessUnixHomeDir()
+
+	return []string{
+		filepath.Join(home, ".cbws.yaml"),
+		filepath.Join(home, "cbws.yaml"),
+	}
+}
+
+// cliCredentials reads the credential out of one CLI configuration.
+//
+// It returns nothing at all, and no error, for a configuration this lookup
+// should step over: one that is not there, one that holds no credential,
+// and one that is not a regular file. That last is why the check is made
+// before the read rather than left to it. A directory would come back as
+// an unreadable configuration rather than an absent one and fail the whole
+// lookup, and a FIFO would not come back at all.
+//
+// A configuration that is there and cannot be read is still an error. The
+// alternative is authenticating as somebody else because a file was
+// malformed.
+func (s *settings) cliCredentials(ctx context.Context, filename string, scopes []string) (*Credentials, error) {
+	readable, err := isFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("cbws: error reading CBWS CLI config file (%v): %v", filename, err)
+	}
+	if !readable {
+		return nil, nil
+	}
+
+	// A path says where a credential is read from, not which login wrote
+	// it, so this credential can only be cached once the application has
+	// named the current one. Without that name a cache would go on serving
+	// a token from before a logout, so there is no caching here and the
+	// configuration goes on owning the access token, exactly as it does for
+	// a caller with no cache at all.
+	cacheable := s.cache != nil && s.generation != ""
+
+	var storeOptions []cli.FileStoreOption
+	if cacheable {
+		storeOptions = append(storeOptions, cli.WithoutAccessToken())
+	}
+
+	tokenSource, err := cli.NewTokenSource(ctx, cli.NewFileStoreWithOptions(filename, storeOptions...), scopes)
+	switch {
+	case err == nil:
+
+	case os.IsNotExist(err), errors.Is(err, cli.ErrNoToken):
+		return nil, nil
+
+	default:
+		return nil, fmt.Errorf("cbws: error reading CBWS CLI config file (%v): %v", filename, err)
+	}
+
+	if !cacheable {
+		return &Credentials{TokenSource: tokenSource}, nil
+	}
+
+	cached, err := s.cached(tokenSource, tokencache.Key{
+		Issuer:     cli.Endpoint.TokenURL,
+		Subject:    filename,
+		Scopes:     scopes,
+		Generation: s.generation,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &Credentials{TokenSource: cached}, nil
+}
+
+// isFile reports whether path is something worth trying to read a
+// credential out of, and separately whether the question could be answered
+// at all.
+//
+// Not being there is an answer: there is no configuration, and the lookup
+// moves on. So is being a directory or a pipe, which no configuration this
+// package wrote ever is.
+//
+// Anything else is not an answer and must not be read as one. Something is
+// at that path and this cannot tell what, so treating it as absent would
+// step over a configuration that may hold a credential and carry on to
+// authenticate as somebody else. A permission error and a symlink loop are
+// that; so is a symlink whose target is missing, which has to be asked
+// after twice, since a stat through a broken link reports the same absence
+// as nothing being there at all.
+func isFile(path string) (bool, error) {
+	info, err := os.Stat(path)
+	if err == nil {
+		return info.Mode().IsRegular(), nil
+	}
+
+	if !errors.Is(err, fs.ErrNotExist) {
+		return false, err
+	}
+
+	// Stat followed the link and found nothing. Lstat looks at the link
+	// itself, which tells a credential location occupied by something
+	// unresolvable from one that is genuinely empty.
+	_, err = os.Lstat(path)
+	switch {
+	case err == nil:
+		return false, fmt.Errorf("%s is a symlink that does not resolve", path)
+
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+
+	default:
+		return false, err
+	}
 }
 
 func guessUnixHomeDir() string {

@@ -843,11 +843,17 @@ func (c *serializingCache) overlapped() bool {
 // clears the skew, and time passing does not make it clear it again. Left
 // to oauth2's own ten second margin, a token taken at thirty-one seconds
 // would go on being served from memory down to ten.
+//
+// The assertion in the middle asks oauth2.Token.Valid, which reads the wall
+// clock whatever this source is told the time is, so only the injected
+// clock is moved: what changes between the two calls is the source's view
+// of the time and nothing else.
 func TestACachedTokenKeepsTheConfiguredSkew(t *testing.T) {
 	inner := &countingSource{}
 	cache := newMemoryCache()
 
 	clock := now
+
 	source, err := NewTokenSource(inner, cache, Key{Issuer: "i", Subject: t.Name()},
 		withClock(func() time.Time { return clock }), quiet())
 	if err != nil {
