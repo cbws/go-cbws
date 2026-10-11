@@ -6,13 +6,12 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 
 	oauth2_jwt "go.cbws.cloud/sdk/oauth2/jwt"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/oauth2"
 )
 
@@ -129,7 +128,7 @@ func (c Credentials) TokenSource(ctx context.Context, scopes []string) (oauth2.T
 }
 
 func NewTokenSource(ctx context.Context, credentialsFile string, scopes []string) (oauth2.TokenSource, error) {
-	data, err := ioutil.ReadFile(credentialsFile)
+	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
 		return nil, fmt.Errorf("could not read credentials file: %+v", err)
 	}

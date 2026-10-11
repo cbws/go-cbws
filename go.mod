@@ -5,8 +5,8 @@ go 1.26.0
 require (
 	cloud.google.com/go/longrunning v0.6.7
 	github.com/cbws/go-pagination v0.0.1
-	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/gofrs/flock v0.12.1
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang/protobuf v1.5.4
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.11.1

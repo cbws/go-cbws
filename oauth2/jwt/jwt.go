@@ -10,13 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"go.cbws.cloud/sdk/internal/retry"
 	"go.cbws.cloud/sdk/internal/useragent"
 	"go.cbws.cloud/sdk/oauth2/refresh"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/jws"
 )
 
 var (
@@ -170,12 +169,16 @@ func (js jwtSource) exchange(ctx context.Context, hc *http.Client) (*oauth2.Toke
 		token.Expiry = time.Now().Add(time.Duration(secs) * time.Second)
 	}
 	if v := tokenRes.IDToken; v != "" {
-		// decode returned id token to get expiry
-		claimSet, err := jws.Decode(v)
-		if err != nil {
+		// The id token's expiry takes precedence over expires_in. It is read
+		// without verifying the signature: it arrived over the same TLS
+		// connection as the access token, and only its expiry is used.
+		var claims jwt.RegisteredClaims
+		if _, _, err := jwt.NewParser().ParseUnverified(v, &claims); err != nil {
 			return nil, fmt.Errorf("oauth2: error decoding JWT token: %v", err)
 		}
-		token.Expiry = time.Unix(claimSet.Exp, 0)
+		if claims.ExpiresAt != nil {
+			token.Expiry = claims.ExpiresAt.Time
+		}
 	}
 	return token, nil
 }
@@ -210,14 +213,12 @@ func (js jwtSource) assertion() (string, error) {
 		a = js.conf.TokenURL
 	}
 	claims := &JWTOAuthClaims{
-		StandardClaims: jwt.StandardClaims{
-			Audience:  a,
-			ExpiresAt: time.Now().Add(t * time.Second).Unix(),
-			Id:        uuid.New().String(),
-			Issuer:    js.conf.ClientID,
-			Subject:   js.conf.Subject,
-		},
-		Scope: strings.Join(js.conf.Scopes, " "),
+		Audience:  a,
+		ExpiresAt: time.Now().Add(t * time.Second).Unix(),
+		ID:        uuid.New().String(),
+		Issuer:    js.conf.ClientID,
+		Subject:   js.conf.Subject,
+		Scope:     strings.Join(js.conf.Scopes, " "),
 	}
 
 	jwtToken := jwt.NewWithClaims(js.conf.SigningMethod, claims)
@@ -226,7 +227,50 @@ func (js jwtSource) assertion() (string, error) {
 	return jwtToken.SignedString(js.conf.PrivateKey)
 }
 
+// JWTOAuthClaims are the claims of a client assertion.
+//
+// They are declared field by field rather than through jwt.RegisteredClaims
+// so that the encoding depends on nothing process-wide. RegisteredClaims
+// writes a single audience as a list or a string, and an expiry with or
+// without a fraction, according to package variables any other code in the
+// process may set; here aud is always a string and exp always whole seconds.
 type JWTOAuthClaims struct {
-	jwt.StandardClaims
-	Scope string `json:"scope,omitempty"` // space-delimited list of the permissions the application requests
+	Audience  string `json:"aud,omitempty"`
+	ExpiresAt int64  `json:"exp,omitempty"`
+	ID        string `json:"jti,omitempty"`
+	Issuer    string `json:"iss,omitempty"`
+	Subject   string `json:"sub,omitempty"`
+	Scope     string `json:"scope,omitempty"` // space-delimited list of the permissions the application requests
+}
+
+var _ jwt.Claims = (*JWTOAuthClaims)(nil)
+
+// GetExpirationTime implements jwt.Claims.
+func (c *JWTOAuthClaims) GetExpirationTime() (*jwt.NumericDate, error) {
+	if c.ExpiresAt == 0 {
+		return nil, nil
+	}
+
+	return jwt.NewNumericDate(time.Unix(c.ExpiresAt, 0)), nil
+}
+
+// GetIssuedAt implements jwt.Claims. An assertion carries no iat.
+func (c *JWTOAuthClaims) GetIssuedAt() (*jwt.NumericDate, error) { return nil, nil }
+
+// GetNotBefore implements jwt.Claims. An assertion carries no nbf.
+func (c *JWTOAuthClaims) GetNotBefore() (*jwt.NumericDate, error) { return nil, nil }
+
+// GetIssuer implements jwt.Claims.
+func (c *JWTOAuthClaims) GetIssuer() (string, error) { return c.Issuer, nil }
+
+// GetSubject implements jwt.Claims.
+func (c *JWTOAuthClaims) GetSubject() (string, error) { return c.Subject, nil }
+
+// GetAudience implements jwt.Claims.
+func (c *JWTOAuthClaims) GetAudience() (jwt.ClaimStrings, error) {
+	if c.Audience == "" {
+		return nil, nil
+	}
+
+	return jwt.ClaimStrings{c.Audience}, nil
 }

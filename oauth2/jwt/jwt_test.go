@@ -5,14 +5,17 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.cbws.cloud/sdk/internal/useragent"
@@ -49,7 +52,7 @@ func TestAssertionExpiry(t *testing.T) {
 		return
 	}
 
-	claims := &jwt.StandardClaims{}
+	claims := &JWTOAuthClaims{}
 	token, err := jwt.ParseWithClaims(assertion, claims, func(token *jwt.Token) (interface{}, error) {
 		return privateKey.(*rsa.PrivateKey).Public(), nil
 	})
@@ -59,6 +62,117 @@ func TestAssertionExpiry(t *testing.T) {
 
 	assert.True(t, token.Valid)
 	assert.Greater(t, int(time.Unix(claims.ExpiresAt, 0).Sub(time.Now()).Seconds()), 1800)
+}
+
+// The token endpoint validates the assertion, so its encoding is a contract:
+// a single audience as a string, the expiry in whole seconds, the key id in
+// the header, and nothing it was not given.
+func TestAssertionWireFormat(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	js := jwtSource{
+		conf: &Config{
+			ClientID:      "client-id",
+			Subject:       "subject",
+			PrivateKey:    privateKey,
+			PrivateKeyID:  "key-id",
+			Scopes:        []string{"a", "b"},
+			TokenURL:      "https://accounts.cbws.cloud/oauth2/token",
+			SigningMethod: jwt.GetSigningMethod("RS256"),
+		},
+	}
+	assertion, err := js.assertion()
+	require.NoError(t, err)
+
+	segments := strings.Split(assertion, ".")
+	require.Len(t, segments, 3)
+
+	var header map[string]any
+	decodeSegment(t, segments[0], &header)
+	assert.Equal(t, map[string]any{"alg": "RS256", "typ": "JWT", "kid": "key-id"}, header)
+
+	var claims map[string]json.RawMessage
+	decodeSegment(t, segments[1], &claims)
+
+	keys := make([]string, 0, len(claims))
+	for key := range claims {
+		keys = append(keys, key)
+	}
+	assert.ElementsMatch(t, []string{"aud", "exp", "jti", "iss", "sub", "scope"}, keys)
+
+	assert.JSONEq(t, `"https://accounts.cbws.cloud/oauth2/token"`, string(claims["aud"]))
+	assert.JSONEq(t, `"client-id"`, string(claims["iss"]))
+	assert.JSONEq(t, `"subject"`, string(claims["sub"]))
+	assert.JSONEq(t, `"a b"`, string(claims["scope"]))
+	assert.Regexp(t, `^[0-9]+$`, string(claims["exp"]))
+}
+
+func decodeSegment(t *testing.T, segment string, into any) {
+	t.Helper()
+
+	raw, err := base64.RawURLEncoding.DecodeString(segment)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, into))
+}
+
+func TestTokenExpiryFromIDToken(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	idToken := func(t *testing.T, claims jwt.MapClaims) string {
+		t.Helper()
+
+		signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("any key"))
+		require.NoError(t, err)
+
+		return signed
+	}
+	idTokenExpiry := time.Now().Add(20 * time.Minute).Truncate(time.Second)
+
+	tests := []struct {
+		name    string
+		idToken string
+		// wantExpiry is checked to the second; zero means expires_in applies.
+		wantExpiry time.Time
+		wantErr    bool
+	}{
+		{name: "IDTokenExpiryTakesPrecedence", idToken: idToken(t, jwt.MapClaims{"exp": idTokenExpiry.Unix()}), wantExpiry: idTokenExpiry},
+		{name: "IDTokenWithoutExpiryKeepsExpiresIn", idToken: idToken(t, jwt.MapClaims{"sub": "subject"})},
+		{name: "MalformedIDTokenFails", idToken: "not-a-jwt", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"access_token":"at","token_type":"bearer","expires_in":3600,"id_token":"`+tt.idToken+`"}`)
+			}))
+			defer server.Close()
+
+			js := jwtSource{
+				ctx: context.Background(),
+				conf: &Config{
+					PrivateKey:    privateKey,
+					TokenURL:      server.URL,
+					SigningMethod: jwt.GetSigningMethod("RS256"),
+				},
+			}
+			token, err := js.Token()
+			if tt.wantErr {
+				require.Error(t, err)
+
+				return
+			}
+			require.NoError(t, err)
+
+			if tt.wantExpiry.IsZero() {
+				assert.WithinDuration(t, time.Now().Add(time.Hour), token.Expiry, time.Minute)
+			} else {
+				assert.True(t, tt.wantExpiry.Equal(token.Expiry), "expiry %v, want %v", token.Expiry, tt.wantExpiry)
+			}
+		})
+	}
 }
 
 func TestTokenRequestIdentifiesTheSDK(t *testing.T) {
