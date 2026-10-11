@@ -85,6 +85,29 @@ func (u UnexpectedMetadataResponse) Error() string {
 	return fmt.Sprintf("unexpected metadata service response code %d: %s", u.StatusCode, u.Body)
 }
 
+// ErrNoServiceAccount reports that the machine has no service account
+// attached, so the metadata endpoint has no identity to mint a token for.
+// The error a TokenSource returns for it wraps the endpoint's
+// UnexpectedMetadataResponse as well.
+var ErrNoServiceAccount = errors.New("the machine has no service account attached")
+
+// tokenError names the missing service account when the token endpoint
+// answers 404, and returns any other error as it is.
+//
+// The metadata server also answers 404 to a caller it does not know as a
+// machine. A metadata source is only of use where it does know the caller,
+// which is what OnCBWS establishes before credential discovery builds one,
+// so a 404 from the token endpoint is read as the machine lacking an
+// identity rather than as the caller not being a machine.
+func tokenError(err error) error {
+	var response UnexpectedMetadataResponse
+	if !errors.As(err, &response) || response.StatusCode != http.StatusNotFound {
+		return err
+	}
+
+	return fmt.Errorf("%w; attach one to the machine, or name a service account key with CBWS_CREDENTIALS: %w", ErrNoServiceAccount, err)
+}
+
 // assumedLifetime is how long a token is taken to live when the endpoint does
 // not say. It is short so that a token is never held past its real expiry.
 const assumedLifetime = 60 * time.Second
@@ -109,7 +132,7 @@ func (js metadataSource) Token() (*oauth2.Token, error) {
 	}
 	body, contentType, err := request(js.ctx, js.endpoint, header)
 	if err != nil {
-		return nil, err
+		return nil, tokenError(err)
 	}
 
 	if mediaType, _, _ := mime.ParseMediaType(contentType); mediaType != jsonMediaType {

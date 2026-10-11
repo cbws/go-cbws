@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +24,8 @@ func TestTokenSource(t *testing.T) {
 		expectedToken  string
 		expectedError  string
 		expectedExpiry time.Duration
+		// noServiceAccount is whether the error is ErrNoServiceAccount.
+		noServiceAccount bool
 	}{
 		{
 			name:           "success",
@@ -32,10 +35,13 @@ func TestTokenSource(t *testing.T) {
 			expectedExpiry: 60 * time.Second,
 		},
 		{
-			name:          "non-200 status code",
-			statusCode:    http.StatusNotFound,
-			responseBody:  "not found",
-			expectedError: "unexpected metadata service response code 404: not found",
+			name:         "no service account",
+			statusCode:   http.StatusNotFound,
+			responseBody: "not found",
+			expectedError: "the machine has no service account attached; attach one to the machine, " +
+				"or name a service account key with CBWS_CREDENTIALS: " +
+				"unexpected metadata service response code 404: not found",
+			noServiceAccount: true,
 		},
 		{
 			name:          "internal server error",
@@ -65,6 +71,12 @@ func TestTokenSource(t *testing.T) {
 				assert.Error(t, err)
 				assert.EqualError(t, err, tt.expectedError)
 				assert.Nil(t, token)
+				assert.Equal(t, tt.noServiceAccount, errors.Is(err, ErrNoServiceAccount))
+
+				var response UnexpectedMetadataResponse
+				if assert.ErrorAs(t, err, &response) {
+					assert.Equal(t, tt.statusCode, response.StatusCode)
+				}
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, token)
@@ -312,6 +324,16 @@ func TestProjectName(t *testing.T) {
 			assert.EqualError(t, err, "unexpected metadata service response code 403: unknown machine")
 		}
 		assert.Equal(t, 2, requests())
+	})
+
+	// Here a 404 means the caller is not a machine, which has nothing to do
+	// with a service account.
+	t.Run("a 404 is not a missing service account", func(t *testing.T) {
+		serve(t, http.StatusNotFound, "not a compute machine")
+
+		_, err := ProjectName(context.Background())
+		assert.EqualError(t, err, "unexpected metadata service response code 404: not a compute machine")
+		assert.NotErrorIs(t, err, ErrNoServiceAccount)
 	})
 }
 
