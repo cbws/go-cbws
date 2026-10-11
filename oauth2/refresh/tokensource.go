@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"go.cbws.cloud/sdk/internal/tokensource"
 	"golang.org/x/oauth2"
 )
 
@@ -34,6 +35,10 @@ const (
 )
 
 var errNoToken = errors.New("refresh: the wrapped token source returned no token and no error")
+
+// A gRPC call's deadline reaches the wait for a token only through
+// TokenContext.
+var _ tokensource.ContextSource = (*TokenSource)(nil)
 
 // TokenSource serves the token it holds while enough of it is left and
 // fetches the next one in the background once it is close to expiry, so that

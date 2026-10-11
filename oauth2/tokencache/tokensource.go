@@ -1,6 +1,7 @@
 package tokencache
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -8,8 +9,13 @@ import (
 	"sync"
 	"time"
 
+	"go.cbws.cloud/sdk/internal/tokensource"
 	"golang.org/x/oauth2"
 )
+
+// A gRPC call's deadline reaches the wrapped source only through
+// TokenContext.
+var _ tokensource.ContextSource = (*TokenSource)(nil)
 
 // DefaultSkew is how long before its expiry a token stops being served
 // from the cache. A token that crossed a process boundary has to survive
@@ -28,6 +34,16 @@ const DefaultSkew = 30 * time.Second
 // whatever in-memory reuse it already had, and this adds reuse that
 // survives the process.
 //
+// A wrapped source that takes a context, as the SDK's own sources do
+// through TokenContext, holds and renews its token itself, and renews it
+// only when it is asked while the token is close to expiry. So once this
+// process has a token of its own, every call is passed to such a source
+// rather than answered from a copy held here, which would keep those calls
+// from it until the token was too close to expiry to serve. The call's
+// context goes with it, bounding how long the call waits. A source that
+// takes no context is not asked again while the token it last returned is
+// valid.
+//
 // Two sources built over one key each keep their own token and may each
 // fetch one, in a single process or across several. That is deliberate, and
 // the reasoning is on Cache: coalescing them means holding a lock across
@@ -42,6 +58,9 @@ type TokenSource struct {
 	skew   time.Duration
 	logger *slog.Logger
 	now    func() time.Time
+
+	// renewing is inner when it takes a context, and nil when it does not.
+	renewing tokensource.ContextSource
 
 	mu    sync.Mutex
 	token *oauth2.Token
@@ -115,6 +134,7 @@ func NewTokenSource(inner oauth2.TokenSource, cache Cache, key Key, options ...O
 		logger: slog.Default(),
 		now:    time.Now,
 	}
+	source.renewing, _ = inner.(tokensource.ContextSource)
 
 	for _, option := range options {
 		option(source)
@@ -123,8 +143,79 @@ func NewTokenSource(inner oauth2.TokenSource, cache Cache, key Key, options ...O
 	return source, nil
 }
 
-// Token implements oauth2.TokenSource.
+// Token implements oauth2.TokenSource. It waits on the wrapped source for
+// as long as that takes; TokenContext bounds the wait.
 func (s *TokenSource) Token() (*oauth2.Token, error) {
+	return s.TokenContext(context.Background())
+}
+
+// TokenContext is Token with a bound on the wait, for a wrapped source that
+// takes a context: a caller whose context ends before that source has a
+// token gets the context's error. A wrapped source that takes no context is
+// waited on regardless.
+func (s *TokenSource) TokenContext(ctx context.Context) (*oauth2.Token, error) {
+	if s.renewing != nil {
+		return s.deferred(ctx)
+	}
+
+	return s.held()
+}
+
+// deferred serves a call when the wrapped source renews its own token. A
+// token read from the cache is served from here while it clears the skew,
+// since the wrapped source has never seen it. Anything else is the wrapped
+// source's to answer.
+//
+// Nothing is held across the call to the wrapped source. A caller with a
+// deadline has to be able to give up, and one waiting on a lock here could
+// not; concurrent callers are coalesced by the wrapped source instead.
+func (s *TokenSource) deferred(ctx context.Context) (*oauth2.Token, error) {
+	s.mu.Lock()
+	if s.token == nil || s.fromCache {
+		if s.token != nil && s.servable(s.token) {
+			token := s.token
+			s.mu.Unlock()
+
+			return token, nil
+		}
+
+		if token := s.cached(); token != nil {
+			s.token, s.fromCache = token, true
+			s.mu.Unlock()
+
+			return token, nil
+		}
+	}
+	s.mu.Unlock()
+
+	token, err := s.renewing.TokenContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// The wrapped source answers with the token it holds until it has a
+	// newer one, so only a token not already held needs storing. One that
+	// expires before the held token is an answer that was overtaken by a
+	// renewal while it was on its way back, and replacing the held token
+	// with it would store the older of the two.
+	if s.token != nil && !s.fromCache &&
+		(token.AccessToken == s.token.AccessToken || token.Expiry.Before(s.token.Expiry)) {
+		return token, nil
+	}
+
+	s.token, s.fromCache = token, false
+	s.store(token)
+
+	return token, nil
+}
+
+// held serves a call when the wrapped source takes no context, from the
+// token held here while it is usable. Callers are serialized, so a burst
+// behind one source fetches once.
+func (s *TokenSource) held() (*oauth2.Token, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -147,23 +238,31 @@ func (s *TokenSource) Token() (*oauth2.Token, error) {
 	}
 
 	s.token, s.fromCache = token, false
+	s.store(token)
 
+	return token, nil
+}
+
+// store writes a token the wrapped source returned to the cache. Called
+// with mu held.
+func (s *TokenSource) store(token *oauth2.Token) {
 	// A token already inside the skew is not stored. The source behind this
 	// one refreshes on a narrower margin, so it can hand back something it
 	// considers current and this considers spent; storing that would fill
 	// the cache with entries every later reader rejects.
-	if cacheable := accessOnly(token); s.servable(cacheable) {
-		// A token that cannot be stored is still a token. Nothing has been
-		// consumed by fetching it and no other process is put at risk by
-		// the entry being absent, so the only cost of giving up here is
-		// that the next process fetches its own. That is the whole of the
-		// policy: this cache never fails a call it could have served.
-		if err := s.cache.Store(s.id, cacheable); err != nil {
-			s.logger.Warn("Could not cache the access token", "error", err, "key", s.id)
-		}
+	cacheable := accessOnly(token)
+	if !s.servable(cacheable) {
+		return
 	}
 
-	return token, nil
+	// A token that cannot be stored is still a token. Nothing has been
+	// consumed by fetching it and no other process is put at risk by the
+	// entry being absent, so the only cost of giving up here is that the
+	// next process fetches its own. That is the whole of the policy: this
+	// cache never fails a call it could have served.
+	if err := s.cache.Store(s.id, cacheable); err != nil {
+		s.logger.Warn("Could not cache the access token", "error", err, "key", s.id)
+	}
 }
 
 // usable reports whether the token already in hand can be served again.

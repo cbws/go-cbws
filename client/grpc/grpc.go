@@ -3,12 +3,12 @@ package grpc
 import (
 	"context"
 
+	"go.cbws.cloud/sdk/internal/perrpc"
 	"go.cbws.cloud/sdk/internal/useragent"
 	creds "go.cbws.cloud/sdk/oauth2"
 	"go.cbws.cloud/sdk/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/oauth"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -46,6 +46,7 @@ func (g *GRPCClient) Close() error {
 // New dials the endpoint the options name. The credentials it builds fetch
 // tokens for as long as the client lives, so ending ctx does not end them:
 // ctx may be a request's context even when the client outlives the request.
+// Each call's own context bounds how long that call waits for a token.
 func New(ctx context.Context, opts ...option.ClientOption) (*GRPCClient, error) {
 	o, err := processAndValidateOpts(opts)
 	if err != nil {
@@ -60,7 +61,7 @@ func New(ctx context.Context, opts ...option.ClientOption) (*GRPCClient, error) 
 		if creds != nil {
 			o.GRPCDialOpts = append(
 				o.GRPCDialOpts,
-				grpc.WithPerRPCCredentials(oauth.TokenSource{TokenSource: creds.TokenSource}),
+				grpc.WithPerRPCCredentials(perrpc.New(creds.TokenSource, true)),
 				grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")),
 			)
 		}
