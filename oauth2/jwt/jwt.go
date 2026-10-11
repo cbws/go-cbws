@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
+	"go.cbws.cloud/sdk/internal/retry"
 	"go.cbws.cloud/sdk/internal/useragent"
 	"go.cbws.cloud/sdk/oauth2/refresh"
 	"golang.org/x/oauth2"
@@ -65,8 +65,12 @@ type Config struct {
 // TokenSource returns a JWT TokenSource using the configuration
 // in c and the HTTP client from the provided context. It reuses its token
 // and fetches the replacement in the background before it expires.
+//
+// Every token request is made on ctx, so ending it ends any exchange in
+// progress and fails those that follow. A source meant to outlive a request
+// is built on a context without that request's cancellation.
 func (c *Config) TokenSource(ctx context.Context) oauth2.TokenSource {
-	return refresh.NewTokenSource(jwtSource{ctx, c})
+	return refresh.NewTokenSource(jwtSource{ctx: ctx, conf: c})
 }
 
 // Client returns an HTTP client wrapping the context's
@@ -83,11 +87,38 @@ func (c *Config) Client(ctx context.Context) *http.Client {
 type jwtSource struct {
 	ctx  context.Context
 	conf *Config
+
+	// policy overrides defaultRetryPolicy, for tests that cannot wait on it.
+	policy *retry.Policy
 }
 
+// Token exchanges a freshly signed assertion for an access token.
+//
+// A transport failure on the way to the token endpoint or back is retried
+// with backoff, within the attempts and time defaultRetryPolicy allows and
+// never past the end of the source's context. An answer from the endpoint
+// is not retried, whatever its status: a rejected assertion fails at once.
+//
+// An attempt that failed after the endpoint received it may still have
+// minted a token, so a retried exchange can leave one token issued that is
+// never used; it expires on its own. Each attempt signs its own assertion,
+// since the endpoint refuses an assertion whose id it has already seen.
 func (js jwtSource) Token() (*oauth2.Token, error) {
+	policy := defaultRetryPolicy
+	if js.policy != nil {
+		policy = *js.policy
+	}
+
 	hc := oauth2.NewClient(useragent.Context(js.ctx), nil)
 
+	return retry.Do(js.ctx, policy, retryable, func(ctx context.Context) (*oauth2.Token, error) {
+		return js.exchange(ctx, hc)
+	})
+}
+
+// exchange makes a single token request on ctx, which bounds the response
+// body's read as well as the request.
+func (js jwtSource) exchange(ctx context.Context, hc *http.Client) (*oauth2.Token, error) {
 	payload, err := js.assertion()
 	if err != nil {
 		return nil, err
@@ -98,20 +129,24 @@ func (js jwtSource) Token() (*oauth2.Token, error) {
 	v.Set("client_assertion_type", defaultGrantType)
 	v.Set("client_assertion", payload)
 	v.Set("scope", strings.Join(js.conf.Scopes, " "))
-	resp, err := hc.PostForm(js.conf.TokenURL, v)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, js.conf.TokenURL, strings.NewReader(v.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf("oauth2: cannot fetch token: %v", err)
+		return nil, fmt.Errorf("oauth2: cannot fetch token: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := hc.Do(req)
+	if err != nil {
+		return nil, transportError{err: err}
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, fmt.Errorf("oauth2: cannot fetch token: %v", err)
+		return nil, transportError{err: err}
 	}
 	if c := resp.StatusCode; c < 200 || c > 299 {
-		return nil, &oauth2.RetrieveError{
-			Response: resp,
-			Body:     body,
-		}
+		return nil, retrieveError(resp, body)
 	}
 	// tokenRes is the JSON response body.
 	var tokenRes struct {
@@ -121,7 +156,7 @@ func (js jwtSource) Token() (*oauth2.Token, error) {
 		ExpiresIn   int64  `json:"expires_in"` // relative seconds from now
 	}
 	if err := json.Unmarshal(body, &tokenRes); err != nil {
-		return nil, fmt.Errorf("oauth2: cannot fetch token: %v", err)
+		return nil, fmt.Errorf("oauth2: cannot fetch token: %w", err)
 	}
 	token := &oauth2.Token{
 		AccessToken: tokenRes.AccessToken,
@@ -143,6 +178,26 @@ func (js jwtSource) Token() (*oauth2.Token, error) {
 		token.Expiry = time.Unix(claimSet.Exp, 0)
 	}
 	return token, nil
+}
+
+// retrieveError reports a token endpoint's refusal. The RFC 6749 error
+// fields are filled in when the body carries them, so that the error's
+// message names the refusal rather than quoting the body.
+func retrieveError(resp *http.Response, body []byte) *oauth2.RetrieveError {
+	var fields struct {
+		Error            string `json:"error"`
+		ErrorDescription string `json:"error_description"`
+		ErrorURI         string `json:"error_uri"`
+	}
+	_ = json.Unmarshal(body, &fields) // a body that is not an RFC 6749 error leaves them empty
+
+	return &oauth2.RetrieveError{
+		Response:         resp,
+		Body:             body,
+		ErrorCode:        fields.Error,
+		ErrorDescription: fields.ErrorDescription,
+		ErrorURI:         fields.ErrorURI,
+	}
 }
 
 func (js jwtSource) assertion() (string, error) {

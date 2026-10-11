@@ -8,10 +8,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // isolate clears both ways of moving the token endpoint, so a test starts
@@ -111,6 +113,49 @@ func TestTokenSourceKeepsThePublicAudience(t *testing.T) {
 	}
 	if audience != "https://accounts.cbws.cloud/oauth2/token" {
 		t.Errorf("assertion audience = %q, want the public token URL", audience)
+	}
+}
+
+// TestTokenSourceStaysWithinTheCallersBudget holds the key exchange open
+// and checks that a token request on a cancelled or expiring context comes
+// back within it, as a caller with a fixed deadline needs.
+func TestTokenSourceStaysWithinTheCallersBudget(t *testing.T) {
+	isolate(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+	t.Setenv(TokenURLEnvVar, server.URL+"/oauth2/token")
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	expiring, cancelExpiring := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	t.Cleanup(cancelExpiring)
+
+	for _, tt := range []struct {
+		name string
+		ctx  context.Context
+		want error
+	}{
+		{name: "cancelled", ctx: cancelled, want: context.Canceled},
+		{name: "deadline", ctx: expiring, want: context.DeadlineExceeded},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tokenSource, err := testCredentials(t).TokenSource(tt.ctx, []string{"scope"})
+			if err != nil {
+				t.Fatalf("TokenSource: %+v", err)
+			}
+
+			start := time.Now()
+			_, err = tokenSource.Token()
+			if !errors.Is(err, tt.want) {
+				t.Errorf("Token error = %v, want %v", err, tt.want)
+			}
+			if elapsed := time.Since(start); elapsed > 2*time.Second {
+				t.Errorf("Token returned after %s, want within the caller's budget", elapsed)
+			}
+		})
 	}
 }
 
