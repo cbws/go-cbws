@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go.cbws.cloud/sdk/client/grpc"
+	"go.cbws.cloud/sdk/internal/defaultscopes"
 	"go.cbws.cloud/sdk/option"
 
 	"go.cbws.cloud/api/compute/v1alpha1"
@@ -16,6 +17,7 @@ const endpoint = "dns:///compute.cbws.cloud:443"
 func NewClient(ctx context.Context, project string, opts ...option.ClientOption) (*Client, error) {
 	o := []option.ClientOption{
 		option.WithEndpoint(endpoint),
+		defaultscopes.With("cbws.compute"),
 	}
 	o = append(o, opts...)
 

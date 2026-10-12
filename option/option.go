@@ -14,8 +14,13 @@ import (
 )
 
 type DialSettings struct {
-	Endpoint        string
-	Scopes          []string
+	Endpoint string
+	// Scopes are what the caller asked a minted token to carry, with WithScopes.
+	Scopes []string
+	// DefaultScopes are what a client asks for when the caller asked for none: the scope of the
+	// service it talks to, so that a token minted for one client is refused by any other service
+	// once scopes are enforced. A client sets them; WithScopes replaces them.
+	DefaultScopes   []string
 	TokenSource     oauth2.TokenSource
 	Credentials     *creds.Credentials
 	CredentialsFile string // if set, Token Source is ignored.
@@ -48,6 +53,16 @@ func (ds DialSettings) credentialOptions() []creds.Option {
 	}
 
 	return options
+}
+
+// scopes are what a token the SDK mints asks for, from a key, the CLI's configuration or the
+// metadata server. A token source the caller passes in carries whatever it was minted with.
+func (ds DialSettings) scopes() []string {
+	if len(ds.Scopes) > 0 {
+		return ds.Scopes
+	}
+
+	return ds.DefaultScopes
 }
 
 func (ds DialSettings) Validate() error {
@@ -85,14 +100,14 @@ func (ds DialSettings) Creds(ctx context.Context) (*creds.Credentials, error) {
 		return ds.Credentials, nil
 	}
 	if ds.CredentialsJSON != nil {
-		return creds.NewFromJSONWithOptions(ctx, ds.CredentialsJSON, ds.Scopes, options...)
+		return creds.NewFromJSONWithOptions(ctx, ds.CredentialsJSON, ds.scopes(), options...)
 	}
 	if ds.CredentialsFile != "" {
 		data, err := ioutil.ReadFile(ds.CredentialsFile)
 		if err != nil {
 			return nil, fmt.Errorf("cannot read credentials file: %v", err)
 		}
-		return creds.NewFromJSONWithOptions(ctx, data, ds.Scopes, options...)
+		return creds.NewFromJSONWithOptions(ctx, data, ds.scopes(), options...)
 	}
 	if ds.TokenSource != nil {
 		// A source the caller built itself is used as given. Wrapping it
@@ -101,12 +116,12 @@ func (ds DialSettings) Creds(ctx context.Context) (*creds.Credentials, error) {
 		return &creds.Credentials{TokenSource: ds.TokenSource}, nil
 	}
 
-	cred, err := creds.FindDefaultCredentialsWithOptions(ctx, ds.Scopes, options...)
+	cred, err := creds.FindDefaultCredentialsWithOptions(ctx, ds.scopes(), options...)
 	if err != nil {
 		return nil, err
 	}
 	if len(cred.JSON) > 0 {
-		return creds.NewFromJSONWithOptions(ctx, cred.JSON, ds.Scopes, options...)
+		return creds.NewFromJSONWithOptions(ctx, cred.JSON, ds.scopes(), options...)
 	}
 
 	return cred, nil
