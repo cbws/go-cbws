@@ -43,6 +43,13 @@ func (g *GRPCClient) Close() error {
 	return g.client.Close()
 }
 
+// transportCredentials secures the connection of a client that sends
+// credentials, given the options the client was built with. It verifies the
+// server against the system roots.
+var transportCredentials = func([]option.ClientOption) credentials.TransportCredentials {
+	return credentials.NewClientTLSFromCert(nil, "")
+}
+
 // New dials the endpoint the options name. The credentials it builds fetch
 // tokens for as long as the client lives, so ending ctx does not end them:
 // ctx may be a request's context even when the client outlives the request.
@@ -62,7 +69,7 @@ func New(ctx context.Context, opts ...option.ClientOption) (*GRPCClient, error) 
 			o.GRPCDialOpts = append(
 				o.GRPCDialOpts,
 				grpc.WithPerRPCCredentials(perrpc.New(creds.TokenSource, true)),
-				grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")),
+				grpc.WithTransportCredentials(transportCredentials(opts)),
 			)
 		}
 	}
