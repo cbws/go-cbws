@@ -98,22 +98,23 @@ func FindDefaultCredentials(ctx context.Context, scopes ...string) (*Credentials
 func FindDefaultCredentialsWithOptions(ctx context.Context, scopes []string, options ...Option) (*Credentials, error) {
 	resolved := newSettings(options)
 
-	// First, try the legacy environment variable.
-	const legacyEnvVar = "CLOUDBEAR_CREDENTIALS"
-	if filename := os.Getenv(legacyEnvVar); filename != "" {
-		creds, err := readCredentialsFile(ctx, filename, scopes, options)
-		if err != nil {
-			return nil, fmt.Errorf("cbws: error getting credentials using %v environment variable: %v", legacyEnvVar, err)
-		}
-		return creds, nil
-	}
-
-	// Second, try the environment variable.
+	// First, try the environment variable.
 	const envVar = "CBWS_CREDENTIALS"
 	if filename := os.Getenv(envVar); filename != "" {
 		creds, err := readCredentialsFile(ctx, filename, scopes, options)
 		if err != nil {
 			return nil, fmt.Errorf("cbws: error getting credentials using %v environment variable: %v", envVar, err)
+		}
+		return creds, nil
+	}
+
+	// Second, try the legacy spelling of the environment variable, which is
+	// still read for setups that set only it.
+	const legacyEnvVar = "CLOUDBEAR_CREDENTIALS"
+	if filename := os.Getenv(legacyEnvVar); filename != "" {
+		creds, err := readCredentialsFile(ctx, filename, scopes, options)
+		if err != nil {
+			return nil, fmt.Errorf("cbws: error getting credentials using %v environment variable: %v", legacyEnvVar, err)
 		}
 		return creds, nil
 	}

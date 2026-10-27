@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -123,26 +124,46 @@ func TestTokenSourceStaysWithinTheCallersBudget(t *testing.T) {
 	isolate(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		// The server ends a request's context when the client goes away
+		// only once the request body has been read. A handler that leaves
+		// the body unread outlives the exchange, and server.Close waits on
+		// it for good.
+		_, _ = io.Copy(io.Discard, r.Body)
 		<-r.Context().Done()
 	}))
 	t.Cleanup(server.Close)
 	t.Setenv(TokenURLEnvVar, server.URL+"/oauth2/token")
 
-	cancelled, cancel := context.WithCancel(context.Background())
-	cancel()
-	expiring, cancelExpiring := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	t.Cleanup(cancelExpiring)
+	credentials := testCredentials(t)
 
 	for _, tt := range []struct {
 		name string
-		ctx  context.Context
+		ctx  func(t *testing.T) context.Context
 		want error
 	}{
-		{name: "cancelled", ctx: cancelled, want: context.Canceled},
-		{name: "deadline", ctx: expiring, want: context.DeadlineExceeded},
+		{
+			name: "cancelled",
+			ctx: func(*testing.T) context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			want: context.Canceled,
+		},
+		{
+			// The deadline starts in the subtest, so that it is still ahead
+			// when the request is sent and the exchange is held open on it.
+			name: "deadline",
+			ctx: func(t *testing.T) context.Context {
+				ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+				t.Cleanup(cancel)
+				return ctx
+			},
+			want: context.DeadlineExceeded,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			tokenSource, err := testCredentials(t).TokenSource(tt.ctx, []string{"scope"})
+			tokenSource, err := credentials.TokenSource(tt.ctx(t), []string{"scope"})
 			if err != nil {
 				t.Fatalf("TokenSource: %+v", err)
 			}

@@ -16,7 +16,7 @@ The SDK checks for credentials in the following order:
 
     **In CI/CD**, use whatever your runner offers for file-backed secrets rather than pasting the key into a plain variable. In GitLab CI, set the variable's type to **File**: GitLab then writes the value to a temporary file and sets `CBWS_CREDENTIALS` to that path. A variable of type *Variable* holding the JSON will not work.
 
-    **Legacy:** `CLOUDBEAR_CREDENTIALS` is checked *before* `CBWS_CREDENTIALS` and behaves identically. It is deprecated, but note that when it is set it shadows `CBWS_CREDENTIALS` entirely.
+    **Legacy:** `CLOUDBEAR_CREDENTIALS` is deprecated. It behaves identically, but the SDK reads it only when `CBWS_CREDENTIALS` is not set.
 
 2.  **Well-Known Credentials File (`~/.config/cbws/credentials.json`)**
     If the `CBWS_CREDENTIALS` environment variable is not set, the SDK then checks for a credentials file at the standard location: `~/.config/cbws/credentials.json`. This file should contain a JSON object with your CBWS service account credentials. This is a common method for local development environments.

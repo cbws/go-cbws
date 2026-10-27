@@ -27,6 +27,7 @@ func NewClient(ctx context.Context, project string, opts ...option.ClientOption)
 	}
 
 	return &Client{
+		conn:        conn,
 		client:      v1alpha1.NewComputeServiceClient(conn),
 		longrunning: longrunningpb.NewOperationsClient(conn),
 		project:     project,
@@ -34,6 +35,9 @@ func NewClient(ctx context.Context, project string, opts ...option.ClientOption)
 }
 
 type Client struct {
+	// conn also carries the services that are not public, whose methods live in files of their
+	// own so that the public SDK can leave them out.
+	conn        *grpc.GRPCClient
 	client      v1alpha1.ComputeServiceClient
 	longrunning longrunningpb.OperationsClient
 	project     string

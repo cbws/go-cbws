@@ -145,6 +145,23 @@ func TestFindDefaultCredentialsPrefersTheEnvironment(t *testing.T) {
 	}
 }
 
+// TestFindDefaultCredentialsPrefersCBWSCredentials: with both spellings set,
+// CBWS_CREDENTIALS is used and the legacy one is not even read, so a stale
+// legacy value cannot shadow it.
+func TestFindDefaultCredentialsPrefersCBWSCredentials(t *testing.T) {
+	home := isolate(t)
+	t.Setenv("CBWS_CREDENTIALS", writeServiceAccountKey(t, home))
+	t.Setenv("CLOUDBEAR_CREDENTIALS", filepath.Join(home, "absent.json"))
+
+	credentials, err := FindDefaultCredentials(context.Background())
+	if err != nil {
+		t.Fatalf("FindDefaultCredentials: %+v", err)
+	}
+	if len(credentials.JSON) == 0 {
+		t.Error("credentials carry no JSON, so the key was not the source used")
+	}
+}
+
 // TestFindDefaultCredentialsReportsAMissingKey: a key named explicitly and
 // not found is a mistake worth reporting, not a reason to fall back to
 // another identity.
