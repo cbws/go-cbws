@@ -26,11 +26,16 @@ func NewClient(ctx context.Context, opts ...option.ClientOption) (*Client, error
 
 	return &Client{
 		client: v1alpha1.NewProjectsServiceClient(conn),
+		// Unexported and unused outside this package: FoldersService is not public yet, so
+		// folders_internal.go, not this file, is what turns it into a client. See the comment
+		// there for why that split exists.
+		conn: conn,
 	}, nil
 }
 
 type Client struct {
 	client v1alpha1.ProjectsServiceClient
+	conn   *grpc.GRPCClient
 }
 
 func (c Client) UnderlyingClient() v1alpha1.ProjectsServiceClient {
